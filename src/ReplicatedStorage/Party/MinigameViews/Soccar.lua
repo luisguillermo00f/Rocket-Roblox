@@ -73,7 +73,7 @@ function View.new(round: any)
 		else
 			tag = if me and p.team == me.team then "COMPAÑERO" else "RIVAL"
 		end
-		table.insert(entries, { team = p.team, skin = p.skin, config = CarConfig[p.hitbox] or CarConfig.Octane, name = p.name, tag = tag })
+		table.insert(entries, { team = p.team, skin = p.cosmetics or p.skin, config = CarConfig[p.hitbox] or CarConfig.Octane, name = p.name, tag = tag })
 	end
 	self.introPlaying = true
 	local ok = pcall(function()
@@ -151,7 +151,10 @@ function View.OnEvent(self: any, kind: string, data: any)
 		self.lastScorer = data.team
 		self.goalAt = os.clock()
 		local color = if data.team == 0 then BLUE else ORANGE
-		if data.pos then Effects.Goal(RenderMap.Pos(data.pos), color, true) end
+		-- the scorer's goal explosion (cosmetic; the server says who scored)
+		local scorer = data.scorer and r.visuals[data.scorer]
+		local goalId = scorer and scorer.p and scorer.p.cosmetics and scorer.p.cosmetics.goal
+		if data.pos then Effects.Goal(RenderMap.Pos(data.pos), color, true, goalId) end
 		Camera.Shake(3.2)
 		if not r.me then
 			-- spectators get no personal HUD events: show the goal banner from the broadcast

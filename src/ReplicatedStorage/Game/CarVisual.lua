@@ -2,7 +2,11 @@
 -- CarVisual.lua: "Striker", an original low-poly car skin. It is built in the car's local frame around the
 -- simulation origin (center of mass) and only follows the physics state - wheels sit where the suspension
 -- rays put them, steer by the real wheel angle and spin with ground speed. It has no collision.
+-- Cosmetics (docs/cosmetics.md): new() takes a skin name ("Octane") or a loadout (slot -> item id); the loadout is
+-- drawn by CosmeticApply on the finished car (colours, materials, boost, title) - the shape and fit never change.
 local RenderMap = require(script.Parent.RenderMap)
+local CosmeticApply = require(script.Parent.CosmeticApply)
+local CosmeticCatalog = require(script.Parent.Parent:WaitForChild("Economy"):WaitForChild("CosmeticCatalog"))
 local GS = require(script.Parent.GraphicsSettings)
 local Sounds = require(script.Parent.Sounds)
 local C = require(script.Parent.Parent.Physics.PhysicsConstants)
@@ -56,6 +60,7 @@ local function buildFromMesh(self: any, tpl: Model, car: any, model: Model, colo
 	ga.Position = Vector3.new(0, -body.Size.Y * 0.45, 0)
 	ga.Parent = body
 	glow.Parent = ga
+	self.underglow = glow
 	table.insert(self.parts, body)
 	local center = RenderMap.LocalOffset(Vector3.new(hc.X, 0, hc.Z)) + Vector3.new(0, 0.02, 0)
 	table.insert(self.offsets, CFrame.new(center) * FLIP)
@@ -178,7 +183,7 @@ local function buildComposite(self: any, tpl: Model, car: any, model: Model)
 	end
 end
 
-function CarVisual.new(car: any, parent: Instance, skin: string?)
+local function construct(car: any, parent: Instance, skin: string?): any
 	local self = setmetatable({ car = car, parts = {}, offsets = {}, wheels = {} }, CarVisual)
 	local model = Instance.new("Model")
 	model.Name = "Striker_" .. car.id
@@ -213,13 +218,13 @@ function CarVisual.new(car: any, parent: Instance, skin: string?)
 	end
 
 	add("Part", Vector3.new(116, 78, 13), Vector3.new(12, 0, 10), DARK) -- chassis
-	add("Part", Vector3.new(104, 84, 12), Vector3.new(8, 0, 21), colors.body) -- body shell
-	add("WedgePart", Vector3.new(30, 80, 10), Vector3.new(58, 0, 26), colors.body) -- hood slope
+	add("Part", Vector3.new(104, 84, 12), Vector3.new(8, 0, 21), colors.body):SetAttribute("PaintSlot", "primary") -- body shell
+	add("WedgePart", Vector3.new(30, 80, 10), Vector3.new(58, 0, 26), colors.body):SetAttribute("PaintSlot", "primary") -- hood slope
 	add("Part", Vector3.new(44, 64, 13), Vector3.new(-4, 0, 33), GLASS, Enum.Material.Glass).Reflectance = 0.15 -- cabin
-	add("Part", Vector3.new(30, 58, 3), Vector3.new(-8, 0, 40.5), colors.body) -- roof
-	add("Part", Vector3.new(106, 6, 3), Vector3.new(10, 0, 28.5), colors.accent) -- center stripe
+	add("Part", Vector3.new(30, 58, 3), Vector3.new(-8, 0, 40.5), colors.body):SetAttribute("PaintSlot", "primary") -- roof
+	add("Part", Vector3.new(106, 6, 3), Vector3.new(10, 0, 28.5), colors.accent):SetAttribute("PaintSlot", "secondary") -- center stripe
 	add("Part", Vector3.new(10, 86, 3), Vector3.new(71, 0, 6), DARK) -- splitter
-	add("Part", Vector3.new(9, 84, 3), Vector3.new(-45, 0, 41), DARK) -- spoiler wing
+	add("Part", Vector3.new(9, 84, 3), Vector3.new(-45, 0, 41), DARK):SetAttribute("PaintSlot", "secondary") -- spoiler wing
 	add("Part", Vector3.new(4, 4, 8), Vector3.new(-42, 24, 36), DARK) -- spoiler struts
 	add("Part", Vector3.new(4, 4, 8), Vector3.new(-42, -24, 36), DARK)
 	add("Part", Vector3.new(3, 14, 5), Vector3.new(72, 28, 20), Color3.fromRGB(235, 240, 255), Enum.Material.Neon) -- headlights
@@ -228,7 +233,7 @@ function CarVisual.new(car: any, parent: Instance, skin: string?)
 	add("Part", Vector3.new(2, 16, 4), Vector3.new(-45, -28, 26), Color3.fromRGB(220, 30, 40), Enum.Material.Neon)
 	for _, w in car.wheels do
 		local c = w.conn * C.BT_TO_UU
-		add("Part", Vector3.new(30, 7, 9), Vector3.new(c.X, (math.abs(c.Y) + 13) * math.sign(c.Y), 24), colors.body) -- fender arches
+		add("Part", Vector3.new(30, 7, 9), Vector3.new(c.X, (math.abs(c.Y) + 13) * math.sign(c.Y), 24), colors.body):SetAttribute("PaintSlot", "primary") -- fender arches
 	end
 	local nozzle = add("Part", Vector3.new(6, 16, 10), Vector3.new(-47, 0, 17), Color3.fromRGB(70, 72, 80), Enum.Material.Metal)
 	self.nozzle = nozzle
@@ -264,6 +269,8 @@ function CarVisual.new(car: any, parent: Instance, skin: string?)
 		local hub = part(model, "Part", Vector3.new(11.6, rUU * 1.1, rUU * 1.1), Color3.fromRGB(150, 155, 165), Enum.Material.Metal)
 		hub.Shape = Enum.PartType.Cylinder
 		local spoke = part(model, "Part", Vector3.new(11.8, rUU * 1.6, 3), Color3.fromRGB(150, 155, 165), Enum.Material.Metal)
+		hub:SetAttribute("PaintSlot", "wheel")
+		spoke:SetAttribute("PaintSlot", "wheel")
 		self.wheels[i] = { parts = { tire, hub, spoke }, w = w, tire = tire }
 		-- supersonic streak on the back wheels
 		if not w.front then
@@ -285,6 +292,21 @@ function CarVisual.new(car: any, parent: Instance, skin: string?)
 			self.wheels[i].trail = trail
 		end
 	end
+	return self
+end
+
+-- skin: "Octane" / "Troll" (as before) or a loadout { slot = item id } (the player's cosmetics; bad ids -> defaults)
+function CarVisual.new(car: any, parent: Instance, skin: any?)
+	if type(skin) ~= "table" then
+		return construct(car, parent, skin)
+	end
+	local loadout = CosmeticCatalog.Resolve(skin)
+	local self = construct(car, parent, loadout.body.params.template)
+	local ok, err = pcall(function(): any
+		CosmeticApply.Car(self, loadout, TEAM_COLORS[car.team] or TEAM_COLORS[0])
+		return nil
+	end)
+	if not ok then warn("[CarVisual] cosmetics:", err) end
 	return self
 end
 
@@ -394,6 +416,7 @@ function CarVisual.Update(self: any, carCF: CFrame, visible: boolean)
 	end
 	local boosting = visible and car.isBoosting
 	self.flame.Rate = if boosting then 140 * math.max(GS.ParticleMult(), 0.2) else 0
+	if self.boostExtra then self.boostExtra.Rate = if boosting then 40 * GS.ParticleMult() else 0 end
 	if self.boostTrail then
 		self.boostTrail.Enabled = boosting and GS.Get("trails")
 		self.boostLight.Brightness = if boosting then 2.5 else 0
@@ -426,6 +449,23 @@ function CarVisual.SetNameplate(self: any, name: string, color: Color3)
 	label.TextStrokeColor3 = Color3.fromRGB(10, 10, 14)
 	label.TextStrokeTransparency = 0.25
 	label.Parent = bb
+	-- equipped title (cosmetic): a smaller second line under the name
+	local title = self.title
+	if type(title) == "table" and type(title.text) == "string" then
+		bb.Size = UDim2.new(6, 30, 1.3, 10)
+		label.Size = UDim2.fromScale(1, 0.68)
+		local t = Instance.new("TextLabel")
+		t.BackgroundTransparency = 1
+		t.Position = UDim2.fromScale(0, 0.68)
+		t.Size = UDim2.fromScale(1, 0.32)
+		t.FontFace = OSWALD
+		t.Text = title.text
+		t.TextScaled = true
+		t.TextColor3 = title.color or Color3.new(1, 1, 1)
+		t.TextStrokeColor3 = Color3.fromRGB(10, 10, 14)
+		t.TextStrokeTransparency = if title.glow then 0.6 else 0.35
+		t.Parent = bb
+	end
 	-- lives in PlayerGui (adorned to the car) so it always renders
 	local lp = game:GetService("Players").LocalPlayer
 	bb.Parent = if lp then lp:WaitForChild("PlayerGui") else self.model

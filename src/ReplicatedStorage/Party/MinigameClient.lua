@@ -179,7 +179,7 @@ function Round.AddVisual(self: any, p: any)
 		proxy = CarPhysics.new(CarConfig[p.hitbox] or CarConfig.Octane, p.team or 0, 100 + (p.netId or 0))
 		car = proxy
 	end
-	local v = CarVisual.new(car, self.folder, skin)
+	local v = CarVisual.new(car, self.folder, p.cosmetics or skin) -- the server sends each player's saved cosmetics
 	-- free-for-all minigames give every player their own colour (the view decides)
 	local color = self.view and self.view.CarColor and self.view:CarColor(p) or nil
 	if color then paint(v, color) end

@@ -668,7 +668,7 @@ function MenuCinematic.Start(cfg: { [string]: any }, onReveal: ((boolean) -> ())
 	st = {
 		rng = Random.new(math.floor(os.clock() * 1e6) % 2147483647),
 		config = CarConfig[cfg.hitbox] or CarConfig.Octane,
-		skin = cfg.skin or "Octane",
+		skin = cfg.loadout or cfg.skin or "Octane", -- the equipped cosmetics when the profile has them
 		folder = folder,
 		onReveal = onReveal,
 		ball = BallVisual.new(folder),
@@ -703,7 +703,7 @@ end
 -- garage / settings changed: swap the skin in place, or restart the beat for a new hitbox
 function MenuCinematic.SetCar(cfg: { [string]: any })
 	if not st then return end
-	st.skin = cfg.skin or st.skin
+	st.skin = cfg.loadout or cfg.skin or st.skin
 	local newConfig = CarConfig[cfg.hitbox] or st.config
 	if newConfig ~= st.config then
 		st.config = newConfig

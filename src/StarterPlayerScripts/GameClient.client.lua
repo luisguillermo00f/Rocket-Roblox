@@ -65,7 +65,7 @@ GraphicsSettings.Apply() -- builds the split-screen arena copies once, off the c
 
 -- ===== session state =====
 local state = "menu" -- "menu" | "match"
-local cfg = { mode = "1v1", bot = false, difficulty = "pro", hitbox = "Octane", skin = "Octane" }
+local cfg: { [string]: any } = { mode = "1v1", bot = false, difficulty = "pro", hitbox = "Octane", skin = "Octane" }
 local world: any = nil
 local player: any = nil
 local bots: { any } = {}
@@ -94,6 +94,18 @@ local hudEvents: { any } = {}
 local slowmo: { [string]: any }? = nil
 local ballGroundedLatch = false -- set by any sim tick where the ball touches the floor (RL: the match ends at 0:00 only then)
 
+-- the player's equipped cosmetics (slot -> item id) as the server saved them; nil until the profile arrives
+local function myLoadout(): { [string]: string }?
+	local p = EconomyClient.Get()
+	return if p and type(p.equipped) == "table" then p.equipped else nil
+end
+local function loadoutKey(l: any): string
+	if type(l) ~= "table" then return "" end
+	local parts = {}
+	for _, slot in { "body", "primary", "secondary", "wheels", "boost", "goal", "title", "frame" } do table.insert(parts, tostring(l[slot])) end
+	return table.concat(parts, "|")
+end
+
 -- profile (server: ServerScriptService.ProfileService)
 local function remotes(): Instance?
 	return RS:FindFirstChild("Remotes") or RS:WaitForChild("Remotes", 8)
@@ -108,6 +120,11 @@ local function refreshProfile(delay: number)
 		local ok, data = pcall(function() return rf:InvokeServer() end)
 		if ok and type(data) == "table" then
 			EconomyClient.Set(data)
+			-- the menu car wears the saved cosmetics (it may have started before the profile arrived)
+			if state == "menu" and type(data.equipped) == "table" and loadoutKey(data.equipped) ~= loadoutKey(cfg.loadout) then
+				cfg.loadout = data.equipped
+				MenuCinematic.SetCar(cfg)
+			end
 		end
 		if ok and type(data) == "table" and not settingsLoaded then
 			settingsLoaded = true
@@ -168,12 +185,14 @@ local function openMenu()
 	DebugDraw.SetVisible(false, false)
 	-- the menu is a live cinematic around the player's real, physically simulated car
 	refreshProfile(0.4)
+	cfg.loadout = myLoadout()
 	MenuCinematic.Start(cfg, function(on)
 		MainMenu.SetReveal(on, string.upper(cfg.skin == "Troll" and "Carrito Troll" or "Octane") .. "  ·  HITBOX " .. string.upper(cfg.hitbox))
 	end)
 	local function preview(newCfg)
 		cfg.skin = newCfg.skin
 		cfg.hitbox = newCfg.hitbox
+		cfg.loadout = newCfg.loadout -- GARAJE: the loadout being tried on
 		MenuCinematic.SetCar(cfg)
 	end
 	MainMenu.Show(cfg, HITBOXES, function(newCfg)
@@ -206,7 +225,7 @@ local function openMenu()
 			carNames[b.car] = botName(if cfg.mode == "2v2" then i else 2)
 		end
 		for _, car in world.cars do
-			visuals[car] = CarVisual.new(car, renderFolder, if car == player then cfg.skin else "Octane")
+			visuals[car] = CarVisual.new(car, renderFolder, if car == player then (myLoadout() or cfg.skin) else "Octane")
 			if car ~= player and carNames[car] then
 				visuals[car]:SetNameplate(carNames[car], if car.team == 0 then Hud.BLUE else Hud.ORANGE)
 			end
@@ -236,7 +255,7 @@ local function openMenu()
 			local pads = renderFolder:FindFirstChild("BoostPads")
 			if pads then pads.Parent = nil end
 			local diffLabel = BotAI.Difficulties[cfg.difficulty].label
-			local entries = { { team = 0, skin = cfg.skin, config = CarConfig[cfg.hitbox], name = Players.LocalPlayer.DisplayName, tag = "TÚ  ·  " .. string.upper(cfg.hitbox) } }
+			local entries = { { team = 0, skin = myLoadout() or cfg.skin, config = CarConfig[cfg.hitbox], name = Players.LocalPlayer.DisplayName, tag = "TÚ  ·  " .. string.upper(cfg.hitbox) } }
 			if cfg.mode == "2v2" then
 				table.insert(entries, { team = 0, config = CarConfig.Octane, name = botName(1), tag = "COMPAÑERO  ·  BOT " .. diffLabel })
 				table.insert(entries, { team = 1, config = CarConfig.Octane, name = botName(2), tag = "RIVAL  ·  BOT " .. diffLabel })
@@ -401,7 +420,15 @@ local function simTick()
 			phase = "goal"
 			phaseTime = 0
 			local color = if e.team == 0 then Hud.BLUE else Hud.ORANGE
-			Effects.Goal(RenderMap.Pos(world.ball.body.pos * BT), color, true)
+			-- our goal explosion when we scored (MatchEvents rule: last touch was ours); bots use the classic one
+			local goalId = nil
+			local touches = matchEvents and matchEvents.touches
+			local last = touches and touches[#touches]
+			if last and last.car == player and player.team == e.team then
+				local l = myLoadout()
+				goalId = l and l.goal
+			end
+			Effects.Goal(RenderMap.Pos(world.ball.body.pos * BT), color, true, goalId)
 			Camera.Shake(3.2)
 			-- the goal explosion throws nearby cars away (RL): strongest at the ball, fading out by 1500 uu
 			local gp = world.ball.body.pos

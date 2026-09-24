@@ -417,7 +417,7 @@ function PartyManager:ApplyState(st: any)
 		if not e then
 			local phys = self.world:AddCar(0, CarConfig.Octane)
 			phys.isBoosting = true
-			local v = CarVisual.new(phys, self.container, "Octane")
+			local v = CarVisual.new(phys, self.container, m.cosmetics or "Octane") -- seat colour still paints it below
 			e = { visual = v }
 			self.cars[m.id] = e
 			if #st.members > 1 then
