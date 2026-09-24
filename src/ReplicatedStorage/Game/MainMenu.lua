@@ -1953,6 +1953,18 @@ function MainMenu.ShowReward(reward: { [string]: any })
 	if reward.capped then table.insert(parts, "TOPE DIARIO DE CRÉDITOS ALCANZADO") end
 	if reward.eligible == false then table.insert(parts, "SIN RECOMPENSA (PARTIDA DEMASIADO CORTA O SEGUIDA)") end
 	for _, c in reward.challenges or {} do table.insert(parts, "DESAFÍO COMPLETADO: " .. tostring(c.text)) end
+	for _, it in reward.items or {} do
+		local def = CosmeticCatalog.Get(it.id)
+		if def then
+			table.insert(parts, if it.refund then def.name .. " (YA LO TENÍAS: +" .. fmtInt(it.refund) .. " CRÉDITOS)" else "NUEVO OBJETO: " .. def.name)
+		end
+	end
+	local LootboxData = require(script.Parent.Parent:WaitForChild("Economy"):WaitForChild("LootboxData"))
+	for _, bx in reward.boxes or {} do
+		local box = LootboxData.Get(bx.box)
+		local why = if bx.reason == "drop" then " (AL TERMINAR LA PARTIDA)" elseif bx.reason == "level" then " (NIVEL)" elseif bx.reason == "challenge" then " (DESAFÍO)" else ""
+		if box then table.insert(parts, "+" .. tostring(bx.n or 1) .. " " .. box.name .. why) end
+	end
 	if #parts == 0 then return end
 	local old = (p.Parent :: Instance):FindFirstChild("RewardStrip")
 	if old then old:Destroy() end
@@ -1971,9 +1983,17 @@ function MainMenu.ModalOpen(): boolean
 	return overlay ~= nil
 end
 
--- what the shop screens need from the menu (confirmation modal); lootboxes add their tab in phase 3
+-- what the shop screens need from the menu: the confirmation modal and the tabs (OBJETOS <-> CAJAS)
 function MainMenu.ShopCtx(): any
-	return { modal = MainMenu.Modal, closeModal = MainMenu.CloseModal, modalOpen = MainMenu.ModalOpen, tabs = {} }
+	local ctx: { [string]: any } = { modal = MainMenu.Modal, closeModal = MainMenu.CloseModal, modalOpen = MainMenu.ModalOpen }
+	ctx.openShop = function()
+		require(script.Parent.ShopScreen).Open(MainMenu.UI, ctx)
+	end
+	local openBoxes = function(ui: any, c: any)
+		require(script.Parent.LootboxScreen).Open(ui, c)
+	end
+	ctx.tabs = { { "CAJAS", openBoxes :: any } }
+	return ctx
 end
 
 return MainMenu
