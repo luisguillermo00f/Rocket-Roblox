@@ -1,0 +1,5 @@
+*.rbxl
+*.rbxlx
+*.lock
+sourcemap.json
+_probe.txt

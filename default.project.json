@@ -1,0 +1,33 @@
+{
+  "name": "Rocket Roblox",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$path": "src/ReplicatedStorage",
+      "$ignoreUnknownInstances": true
+    },
+    "ReplicatedFirst": {
+      "$path": "src/ReplicatedFirst",
+      "$ignoreUnknownInstances": true
+    },
+    "ServerScriptService": {
+      "$path": "src/ServerScriptService",
+      "$ignoreUnknownInstances": true
+    },
+    "StarterGui": {
+      "$path": "src/StarterGui",
+      "$ignoreUnknownInstances": true
+    },
+    "StarterPlayer": {
+      "$ignoreUnknownInstances": true,
+      "StarterPlayerScripts": {
+        "$path": "src/StarterPlayerScripts",
+        "$ignoreUnknownInstances": true
+      },
+      "StarterCharacterScripts": {
+        "$path": "src/StarterCharacterScripts",
+        "$ignoreUnknownInstances": true
+      }
+    }
+  }
+}
