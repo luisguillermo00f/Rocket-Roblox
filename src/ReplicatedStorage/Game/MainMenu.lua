@@ -1,7 +1,8 @@
 --!strict
 -- MainMenu.lua: main menu, pause menu and end-of-match screen. Same visual language as the HUD: cream panels
 -- with bracket corners, black key chips, Oswald Bold. The main menu also shows the player's profile card (Roblox
--- avatar, level, XP) that opens a full career-stats panel (P).
+-- avatar, level, XP, Créditos) that opens a full career-stats panel (P). Screens in their own modules (DESAFÍOS...)
+-- reuse these helpers through MainMenu.UI.
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -30,6 +31,8 @@ local shownXp: number? = nil -- XP the card last displayed (to animate gains)
 local card: { [string]: any }? = nil
 local GOLD = Color3.fromRGB(255, 196, 64)
 local currentOpenPlay: (() -> ())? = nil
+local shownCredits: number? = nil -- credits the card last displayed (to animate gains)
+local overlayPanel: Frame? = nil -- the open Modal's panel (the server's reward is shown under it)
 
 local function frame(parent: Instance, props: { [string]: any }): Frame
 	local f = Instance.new("Frame")
@@ -213,7 +216,36 @@ local function countUp(label: TextLabel, target: number, delay: number, suffix: 
 	end)
 end
 
--- Profile chip (top-right): round avatar, name, level and a hairline XP bar. Opens the full profile (P).
+local function corner(parent: Instance, radius: UDim?): UICorner
+	local c = Instance.new("UICorner")
+	c.CornerRadius = radius or UDim.new(0, 6)
+	c.Parent = parent
+	return c
+end
+
+local function tween(obj: Instance, t: number, props: { [string]: any }, style: Enum.EasingStyle?): Tween
+	local tw = TweenService:Create(obj, TweenInfo.new(t, style or Enum.EasingStyle.Quart), props)
+	tw:Play()
+	return tw
+end
+
+-- Créditos icon: a small gold diamond (a rotated square; no font glyph needed)
+local function gem(parent: Instance, props: { [string]: any }): Frame
+	local g = frame(parent, { Size = UDim2.fromOffset(12, 12), BackgroundColor3 = GOLD, Rotation = 45 })
+	for k, v in props do (g :: any)[k] = v end
+	return g
+end
+
+-- shared look for the screens that live in their own modules (ChallengesScreen, GarageScreen, ShopScreen...)
+MainMenu.UI = {
+	frame = frame, text = text, button = button, brackets = brackets, chip = chip, newGui = newGui, corner = corner,
+	tween = tween, gem = gem, fmtInt = fmtInt, countUp = countUp,
+	BLUE = BLUE, ORANGE = ORANGE, INK = INK, CREAM = CREAM, CHIP = CHIP, WHITE = WHITE, MUTED = MUTED, GOLD = GOLD,
+	PANEL = Color3.fromRGB(236, 230, 218), BAR = Color3.fromRGB(232, 226, 214), EDGE = Color3.fromRGB(64, 58, 52),
+	OSWALD = OSWALD, OSWALD_REG = OSWALD_REG,
+}
+
+-- Profile chip (top-right): round avatar, name, level, credits and a hairline XP bar. Opens the full profile (P).
 local function buildCard(g: ScreenGui)
 	local lp = Players.LocalPlayer
 	local c = button(g, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -56, 0, 74), Size = UDim2.fromOffset(560, 96), BackgroundTransparency = 1 })
@@ -233,8 +265,11 @@ local function buildCard(g: ScreenGui)
 	local fill = frame(track, { Size = UDim2.fromScale(0, 1), BackgroundColor3 = GOLD })
 	local xpText = text(c, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -104, 0, 76), Size = UDim2.fromOffset(260, 18), Text = "", TextSize = 16, TextColor3 = WHITE, TextTransparency = 0.5, TextXAlignment = Enum.TextXAlignment.Right, FontFace = OSWALD_REG })
 	local levelUp = text(c, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -70, 1, 6), Size = UDim2.fromOffset(320, 22), Text = "", TextSize = 18, TextColor3 = GOLD, TextXAlignment = Enum.TextXAlignment.Right })
+	-- Créditos: "1.250 ◆" left of the XP bar
+	local credits = text(c, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -424, 0, 52), Size = UDim2.fromOffset(140, 24), Text = "0", TextSize = 22, TextColor3 = WHITE, TextXAlignment = Enum.TextXAlignment.Right })
+	gem(c, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, -410, 0, 64) })
 	c.MouseButton1Click:Connect(function() MainMenu.OpenProfile() end)
-	card = { root = c, lvl = lvl, fill = fill, xpText = xpText, badgeScale = badgeScale, levelUp = levelUp }
+	card = { root = c, lvl = lvl, fill = fill, xpText = xpText, badgeScale = badgeScale, levelUp = levelUp, credits = credits }
 end
 
 local function refreshCard(animate: boolean)
@@ -266,12 +301,39 @@ local function refreshCard(animate: boolean)
 		card.fill.Size = target
 	end
 	shownXp = xp
+	-- credits count up from what the card showed last
+	local credits = profileData.credits or 0
+	local from = if animate and shownCredits then shownCredits else credits
+	if credits ~= from then
+		local v = Instance.new("NumberValue")
+		v.Value = from
+		local label = card.credits
+		v.Changed:Connect(function(x) label.Text = fmtInt(x) end)
+		local tw = TweenService:Create(v, TweenInfo.new(0.9, Enum.EasingStyle.Quart), { Value = credits })
+		tw:Play()
+		tw.Completed:Connect(function() v:Destroy() end)
+	else
+		card.credits.Text = fmtInt(credits)
+	end
+	shownCredits = credits
 end
 
 -- data from the server profile (see ServerScriptService.ProfileService)
 function MainMenu.SetProfile(data: { [string]: any })
 	profileData = data
 	refreshCard(true)
+	-- one-time notice from the profile migration (credits for the levels reached before the economy existed)
+	local n = data.notice
+	local c = card
+	if c and type(n) == "table" and (tonumber(n.welcomeBonus) or 0) > 0 then
+		c.levelUp.Text = "BONO DE BIENVENIDA  +" .. fmtInt(n.welcomeBonus) .. " CRÉDITOS"
+		c.levelUp.TextTransparency = 0
+		task.delay(8, function()
+			if c.levelUp.Parent then
+				TweenService:Create(c.levelUp, TweenInfo.new(0.5), { TextTransparency = 1 }):Play()
+			end
+		end)
+	end
 end
 
 function MainMenu.CloseProfile()
@@ -319,6 +381,8 @@ function MainMenu.OpenProfile()
 	local fill = frame(track, { Size = UDim2.fromScale(0, 1), BackgroundColor3 = GOLD })
 	TweenService:Create(fill, TweenInfo.new(0.9, Enum.EasingStyle.Quart), { Size = UDim2.fromScale(into / need, 1) }):Play()
 	text(left, { Position = UDim2.fromOffset(0, 564), Size = UDim2.new(1, 0, 0, 22), Text = string.format("%s / %s XP  ·  %s XP TOTAL", fmtInt(into), fmtInt(need), fmtInt(d.xp or 0)), TextSize = 16, TextColor3 = Color3.fromRGB(190, 194, 206), FontFace = OSWALD_REG })
+	text(left, { Position = UDim2.fromOffset(0, 600), Size = UDim2.new(1, -24, 0, 30), Text = fmtInt((d :: any).credits or 0) .. " CRÉDITOS", TextSize = 26, TextColor3 = GOLD })
+	gem(left, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, -44, 0, 615) })
 
 	-- right: career stats grid
 	text(p, { Position = UDim2.fromOffset(420, 24), Size = UDim2.fromOffset(500, 50), Text = "PERFIL", TextSize = 46, TextXAlignment = Enum.TextXAlignment.Left })
@@ -474,6 +538,9 @@ local function upper(str: string): string
 	return out
 end
 
+-- full screens opened from the menu words (their own modules); closing one mustn't leak the press to the words
+local SCREEN_GUIS = { ChallengesMenu = true, GarageMenu = true, ShopMenu = true, LootboxMenu = true }
+
 local reveal: { [string]: any }? = nil -- hero-reveal name block of the open menu
 local settingsGui: ScreenGui? = nil
 
@@ -507,8 +574,8 @@ function MainMenu.Show(defaults: { [string]: any }, hitboxes: { string }, onPlay
 	refreshCard(false)
 
 	local ITEMS = {
-		{ id = "play", label = "JUGAR" }, { id = "garage", label = "GARAJE" }, { id = "training", label = "ENTRENAMIENTO" },
-		{ id = "ranked", label = "RANKED" }, { id = "settings", label = "AJUSTES" },
+		{ id = "play", label = "JUGAR" }, { id = "garage", label = "GARAJE" }, { id = "challenges", label = "DESAFÍOS" },
+		{ id = "training", label = "ENTRENAMIENTO" }, { id = "ranked", label = "RANKED" }, { id = "settings", label = "AJUSTES" },
 	}
 	local ROW = 80
 	local LEFT = 56
@@ -1613,6 +1680,11 @@ function MainMenu.Show(defaults: { [string]: any }, hitboxes: { string }, onPlay
 			openPlayModal()
 			return
 		end
+		if ITEMS[i].id == "challenges" then
+			sel = i
+			require(script.Parent.ChallengesScreen).Open(MainMenu.UI)
+			return
+		end
 		sel = i
 		opened = true
 		subSel = 1
@@ -1682,7 +1754,7 @@ function MainMenu.Show(defaults: { [string]: any }, hitboxes: { string }, onPlay
 	-- keyboard / gamepad (optional; the mouse does everything)
 	local subClosedAt = -1
 	local closeWatch = Players.LocalPlayer:WaitForChild("PlayerGui").ChildRemoved:Connect(function(c)
-		if c.Name == "SettingsMenu" or c.Name == "ProfileModal" then subClosedAt = os.clock() end
+		if c.Name == "SettingsMenu" or c.Name == "ProfileModal" or SCREEN_GUIS[c.Name] then subClosedAt = os.clock() end
 	end)
 	g.Destroying:Connect(function() closeWatch:Disconnect() end)
 	local function idle(): boolean
@@ -1804,6 +1876,7 @@ function MainMenu.Modal(titleText: string, subtitle: string?, color: Color3?, it
 	frame(g, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.45 })
 	local h = 150 + #items * 84
 	local p = frame(g, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(560, h), BackgroundColor3 = CREAM })
+	overlayPanel = p
 	brackets(p, Color3.fromRGB(64, 58, 52), 10, 18, 3)
 	if color then
 		frame(p, { Size = UDim2.new(1, 0, 0, 8), BackgroundColor3 = color })
@@ -1839,7 +1912,39 @@ function MainMenu.CloseModal()
 	if overlay then
 		overlay:Destroy()
 		overlay = nil
+		overlayPanel = nil
 	end
+end
+
+-- The server's reward for the match that just ended (ProfileUpdate): on the result screen it replaces the "+N XP"
+-- estimate with the real number and adds a strip under the panel (credits, level up, challenges completed).
+function MainMenu.ShowReward(reward: { [string]: any })
+	local p = overlayPanel
+	if not p or not p.Parent or type(reward) ~= "table" then return end
+	for _, l in p:GetChildren() do
+		if l:IsA("TextLabel") and string.find(l.Text, "XP", 1, true) then
+			l.Text = string.gsub(l.Text, "%+[%d%.]+ XP", "+" .. fmtInt(reward.xp or 0) .. " XP")
+		end
+	end
+	local parts = {}
+	if (reward.credits or 0) > 0 then table.insert(parts, "+" .. fmtInt(reward.credits) .. " CRÉDITOS") end
+	if reward.firstWin then table.insert(parts, "PRIMERA VICTORIA DEL DÍA") end
+	if reward.levelTo and reward.levelFrom and reward.levelTo > reward.levelFrom then table.insert(parts, "¡NIVEL " .. reward.levelTo .. "!") end
+	if reward.capped then table.insert(parts, "TOPE DIARIO DE CRÉDITOS ALCANZADO") end
+	if reward.eligible == false then table.insert(parts, "SIN RECOMPENSA (PARTIDA DEMASIADO CORTA O SEGUIDA)") end
+	for _, c in reward.challenges or {} do table.insert(parts, "DESAFÍO COMPLETADO: " .. tostring(c.text)) end
+	if #parts == 0 then return end
+	local old = (p.Parent :: Instance):FindFirstChild("RewardStrip")
+	if old then old:Destroy() end
+	local strip = frame(p.Parent :: Instance, {
+		Name = "RewardStrip", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.5, p.Size.Y.Offset / 2 + 16), -- offsets: the gui's UIScale applies
+		Size = UDim2.fromOffset(760, 30 * #parts + 16), BackgroundColor3 = CHIP, BackgroundTransparency = 0.15,
+	})
+	for i, t in parts do
+		text(strip, { Position = UDim2.fromOffset(0, 8 + (i - 1) * 30), Size = UDim2.new(1, 0, 0, 30), Text = t, TextSize = 22, TextColor3 = if i == 1 then GOLD else WHITE })
+	end
+	strip.BackgroundTransparency = 1
+	tween(strip, 0.3, { BackgroundTransparency = 0.15 })
 end
 
 function MainMenu.ModalOpen(): boolean

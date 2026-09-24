@@ -40,7 +40,9 @@ local MenuCinematic = require(Game:WaitForChild("MenuCinematic"))
 local GraphicsSettings = require(Game:WaitForChild("GraphicsSettings"))
 local InputGlyphs = require(Game:WaitForChild("InputGlyphs"))
 local Sounds = require(Game:WaitForChild("Sounds"))
+local EconomyClient = require(Game:WaitForChild("EconomyClient"))
 Sounds.Init()
+EconomyClient.Start() -- server profile pushes (XP, Créditos, challenges)
 InputGlyphs.Start() -- device tracking, controller glyphs, menu selection frame
 local BOT_NAMES = { "Vórtice", "Nitro", "Cometa", "Titán", "Raptor", "Ónix", "Pulso", "Cénit", "Órbita", "Rayo", "Halcón", "Tormenta" }
 
@@ -104,6 +106,9 @@ local function refreshProfile(delay: number)
 		local rf = rem and rem:WaitForChild("GetProfile", 5) :: RemoteFunction?
 		if not rf then return end
 		local ok, data = pcall(function() return rf:InvokeServer() end)
+		if ok and type(data) == "table" then
+			EconomyClient.Set(data)
+		end
 		if ok and type(data) == "table" and not settingsLoaded then
 			settingsLoaded = true
 			GraphicsSettings.Load(data.settings, Camera.Settings)
@@ -258,13 +263,13 @@ local function endMatch()
 	local color = if mine > theirs then Hud.BLUE elseif mine < theirs then Hud.ORANGE else nil
 	local result = if mine > theirs then "win" elseif mine < theirs then "loss" else "draw"
 	local points = if matchEvents then matchEvents.points else 0
-	local xp = Progression.MatchXp(points, result)
+	local xp = Progression.MatchXp(points, result, "local") -- estimate; the server's real reward replaces it (ProfileUpdate)
 	local rem = RS:FindFirstChild("Remotes")
 	local submit = rem and rem:FindFirstChild("SubmitMatch") :: RemoteEvent?
 	if submit and matchEvents then
 		local st = matchEvents.stats
 		submit:FireServer({
-			result = result, points = points, mode = cfg.mode, difficulty = cfg.difficulty,
+			result = result, points = points, mode = cfg.mode, difficulty = cfg.difficulty, scoreFor = mine, scoreAgainst = theirs,
 			goals = st.goals, assists = st.assists, saves = st.saves, epicSaves = st.epicSaves, shots = st.shots,
 			clears = st.clears, demos = st.demos, aerials = st.aerials, bestKmh = st.bestKmh,
 			pinches = st.pinches, bestPinchKmh = st.bestPinchKmh,
@@ -667,6 +672,16 @@ RunService:BindToRenderStep("RocketSimLoop", Enum.RenderPriority.Camera.Value + 
 end)
 
 MainMenu.ReturnToMenu = openMenu
+
+-- every reward / purchase the server pushes: refresh the menu card and show what was earned on the result screen
+EconomyClient.OnUpdate(function(profile: any, reward: any)
+	if state == "menu" then
+		MainMenu.SetProfile(profile)
+	end
+	if reward then
+		MainMenu.ShowReward(reward)
+	end
+end)
 
 local returnEvent = Game:WaitForChild("ReturnToMenuEvent", 5) :: BindableEvent?
 if returnEvent then
