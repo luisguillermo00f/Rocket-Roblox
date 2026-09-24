@@ -1,6 +1,6 @@
 # Cosméticos: inventario, tienda y equipamiento — fase 2 (diseño)
 
-Estado: **PENDIENTE DE APROBACIÓN**. Depende de la fase 1 (`docs/progression.md`: créditos, perfil v2, rotación por
+Estado: **IMPLEMENTADO** (diseño aprobado, decisiones A/B/C: sí). Depende de la fase 1 (`docs/progression.md`: créditos, perfil v2, rotación por
 fecha UTC y hash determinista `DateUtil`).
 
 Principio: **solo visual**. Ningún cosmético toca `Physics/`, las hitboxes (`CarConfig`), el tamaño de las piezas que
@@ -297,7 +297,9 @@ weeklyPrize = 0,                              -- semana cuyo premio de semanales
   - Vista del coche: el coche del menú que ya existe (`onPreview(cfg)` / `MenuCinematic`) se reconstruye con el loadout
     de prueba. Con TURBO se enciende el turbo en bucle y con GOL se lanza `Effects.Goal` delante de la cámara.
   - Mando: bumpers (`tabs`) para cambiar de slot, cruceta para la cuadrícula, A equipa, B vuelve.
-    `InputGlyphs.HintBar`: «SLOT · EQUIPAR · VOLVER».
+    `InputGlyphs.HintBar`: «RANURA · EQUIPAR / PROBAR · VOLVER».
+  - Un objeto que no tienes se puede **probar**: el coche del menú lo lleva hasta que eliges otro o sales. La línea de
+    estado dice cómo se consigue. Al salir del garaje, el coche vuelve a lo guardado.
 - **TIENDA** (palabra nueva del menú): una tarjeta grande para el destacado semanal («DESTACADO · QUEDAN 3 D 4 H») y 6
   tarjetas del día («SE RENUEVA EN 5 H 12 MIN»). Cada tarjeta muestra nombre, slot, rareza, precio o «COMPRADO», y
   «EQUIPADO» si procede. Al pulsar, confirmación con `MainMenu.Modal`: «¿COMPRAR X POR 450 CRÉDITOS?» (COMPRAR /
@@ -307,15 +309,36 @@ weeklyPrize = 0,                              -- semana cuyo premio de semanales
 ## 10. Módulos
 
 ```
-ReplicatedStorage/Economy/CosmeticCatalog.lua   catálogo, rarezas, level rewards, Resolve(loadout), Defaults()
-ReplicatedStorage/Economy/ShopRotation.lua      Daily(dayIndex), Featured(weekIndex)   (puro, determinista)
-ReplicatedStorage/Game/CosmeticApply.lua        aplica params a un CarVisual (paint, ruedas, turbo, título)
-ServerScriptService/Economy/Inventory.lua       Owns, Buy, Equip, Loadout, GrantLevelItems (puro sobre el perfil)
+ReplicatedStorage/Economy/CosmeticCatalog.lua   catálogo, rarezas, rangos de precio, Resolve(loadout), Defaults(), LevelItems(L)
+ReplicatedStorage/Economy/ShopRotation.lua      Daily(day), Featured(week), OnSale(now), View(now)   (puro, determinista)
+ReplicatedStorage/Game/CosmeticApply.lua        aplica un loadout resuelto a un CarVisual + marco de avatar (UIStroke)
+ReplicatedStorage/Game/GarageScreen.lua         pantalla GARAJE
+ReplicatedStorage/Game/ShopScreen.lua           pantalla TIENDA (con pestañas extra para la fase 3)
+ServerScriptService/Economy/Inventory.lua       Owns, Buy, Equip, Loadout, Grant, WeeklyPrize, Install(Rewards) (puro)
+ServerScriptService/Economy/CosmeticsService.lua  remote CosmeticsRequest, LoadoutFor(player), ganchos de resumen
 ServerScriptService/Economy/CosmeticsTests.lua  RunAll()
-Cambios: CarVisual (acepta loadout), Effects.Goal (4.º parámetro), MainMenu (GARAJE/TIENDA), GameClient,
-         MinigameClient, MinigameViews/Soccar, Minigames/Soccar (campo scorer), MatchMaker/PartyServer/MinigameSession
-         (cosmetics en miembros), ProfileService (remote + BindableFunction GetLoadout)
+Cambios: CarVisual (acepta loadout, título en la placa), Effects.Goal (4.º parámetro goalId), MainMenu (GARAJE/TIENDA,
+         marco y título en la tarjeta), GameClient, MenuCinematic, MinigameClient, MinigameViews/Soccar, PartyManager,
+         Minigames/Soccar (campo scorer), MinigameSession/PartyServer (cosmetics en participantes y miembros),
+         ProfileSchema (v3), ProfileService (CosmeticsService.Init)
 ```
+
+Cambios respecto al diseño:
+
+- En lugar del `BindableFunction GetLoadout`, el código del servidor usa directamente
+  `CosmeticsService.LoadoutFor(player)`, que es un ModuleScript compartido. `MinigameSession.LoadPayload` lo llama para
+  cada humano, así que el loadout vale igual para partidas en línea y para minijuegos, y `MatchMaker` no cambia.
+- La tarjeta del menú muestra el **marco** y el **título**. En la lista de la fiesta (PartyUI) el marco todavía no
+  aparece.
+- **Lobby de la fiesta:** los coches llevan carrocería, llantas y título, pero el color del asiento sigue pintando la
+  carrocería y la estela (como en los minijuegos todos contra todos, el color identifica al jugador).
+- **Minijuegos todos contra todos:** `MinigameClient.paint()` sigue sobrescribiendo la carrocería **y** el color de la
+  llama y la estela con el color del jugador. Llantas, título y carrocería (Octane/Troll) se ven.
+- Explosión del autor: en partidas locales (solo la tuya; los bots usan la clásica) y en línea (evento `goal` con
+  `scorer`). Los demás minijuegos que llaman a `Effects.Goal` siguen con la clásica.
+- Plantillas de malla con textura (`MeshPart.TextureID`): el acabado primario solo cambia material y brillo, porque
+  el color no se vería sobre la textura. Marcar piezas con el atributo `PaintSlot` en Studio mejora el resultado (ver
+  «Probar en Studio»).
 
 ## 11. Tests (`CosmeticsTests.RunAll()`)
 
@@ -333,14 +356,51 @@ Cambios: CarVisual (acepta loadout), Effects.Goal (4.º parámetro), MainMenu (G
 - **Migración:** v2 → v3 conserva créditos, XP, stats y desafíos; da los objetos de nivel ≤ nivel actual; `equipped`
   inválido → valor por defecto; un id retirado en `owned` se conserva.
 
-## 12. Decisiones que necesito que confirmes
+## 12. Decisiones (confirmadas)
 
-- **A. El color primario como acabado del color de equipo** (y no un color libre), para que siempre se lea el equipo.
-  Es lo que hace RL. Alternativa: color libre con un contorno de equipo.
-- **B. Texturas de partícula integradas del motor** (`rbxasset://textures/particles/*`). ¿Valen como «no externas»?
-  Si no, todo con la partícula por defecto.
-- **C. La TIENDA como palabra nueva del menú** (quedarían 7 palabras). Alternativa: TIENDA dentro de GARAJE.
+- **A.** El color primario es un acabado del color de equipo. **Sí.**
+- **B.** Texturas de partícula integradas del motor (`rbxasset://textures/particles/*`). **Sí.**
+- **C.** TIENDA es una palabra del menú (JUGAR, GARAJE, TIENDA, DESAFÍOS, ENTRENAMIENTO, RANKED, AJUSTES). **Sí.**
+
+---
 
 ## Probar en Studio
 
-*(Se completa con los pasos exactos al terminar la implementación.)*
+Requisitos: los de `docs/progression.md` (Rojo sincronizado; API Services para guardar). **Sin API Services, en Studio
+se puede comprar igualmente** (el perfil es de sesión y se pierde al parar), así que el flujo se prueba sin publicar.
+
+1. **Tests:** `print(require(game.ServerScriptService.Economy.CosmeticsTests).RunAll(true))` → **23 / 23**, y los de la
+   fase 1 siguen en **36 / 36** (`EconomyTests`).
+2. **Migración:** con un perfil de nivel ≥ 10, Play → GARAJE → PINTURA: **PERLADO** aparece como tuyo (recompensa de
+   nivel 10) y en TURBO, **TÓXICO** (nivel 5). La XP, los créditos y los desafíos no cambian.
+3. **GARAJE** (palabra del menú):
+   - A la izquierda, las 8 ranuras, cada una con lo que llevas. A la derecha, los objetos con su franja de rareza.
+   - Pulsa un objeto tuyo → «EQUIPADO: …» y el coche del menú cambia. Stop/Play: sigue equipado (se guardó en el
+     servidor).
+   - Pulsa uno que no tienes → el coche lo **prueba** («PROBANDO … · SE CONSIGUE EN: TIENDA / NIVEL N»); al salir del
+     garaje vuelve a lo equipado.
+   - GOL: al pulsar una explosión, se ve delante de la cámara (prueba las 8).
+   - Mando: LB/RB cambian de ranura, la cruceta mueve el marco dorado, A equipa/prueba, B sale.
+4. **TIENDA:** destacado de la semana (legendario) y 6 objetos del día (1 épico, 2 raros, 3 comunes) con precio y la
+   cuenta atrás. Para tener créditos en Studio:
+   `require(game.ServerScriptService.Economy.ProfileStore).Get(game.Players.TU_NOMBRE).credits = 5000`.
+   - Compra uno → confirmación «¿COMPRAR?» → «¡COMPRADO!» con EQUIPAR. El saldo baja en la tienda y en la tarjeta.
+   - Vuelve a pulsarlo → ya no se cobra: dice COMPRADO/EQUIPADO.
+   - Con 0 créditos → «CRÉDITOS INSUFICIENTES» y no cambia nada.
+   - (Opcional, trampa) en la barra de comandos del cliente:
+     `game.ReplicatedStorage.Remotes.CosmeticsRequest:InvokeServer("buy", "goal_lightning")` → `ok = false`
+     («ESE OBJETO NO SE VENDE»). `...InvokeServer("equip", {slot = "goal", id = "goal_blackhole"})` sin tenerlo →
+     «NO LO TIENES».
+5. **Tu coche en partida:** equipa CROMO + LLAMA AZUL/ARCOÍRIS + PLASMA (compradas con créditos de prueba). En
+   CONTRA BOTS, tu coche las lleva (la hitbox no cambia: activa el debug de hitbox si lo tienes y compara), el turbo
+   tiene sus colores y al marcar ves tu explosión; los goles de los bots usan la clásica.
+6. **Réplica en línea** (*Test › Clients and Servers*, 2 jugadores): cada jugador equipa algo distinto → en una
+   partida 1V1 EN LÍNEA cada uno ve el coche, el turbo y el **título bajo el nombre** del otro, y al marcar sale la
+   explosión **del autor** en las dos pantallas. En un minijuego de fiesta se ven llantas y títulos; en los todos
+   contra todos el color del jugador tapa la carrocería y el turbo (es a propósito).
+7. **Tarjeta del menú:** equipa un MARCO (p. ej. NEÓN, que gira) y un TÍTULO → la tarjeta de arriba a la derecha los
+   muestra.
+8. **Plantillas (opcional, mejora visual):** en `ReplicatedStorage.Game.CarModels`, pon el atributo de texto
+   `PaintSlot` = `primary` en las piezas de carrocería, `secondary` en las de acento y `wheel` en las llantas de cada
+   plantilla (Octane, OctaneOrange, Troll, TrollOrange). Sin atributos se usan los nombres `Part 1/Part 2/Part/Part 4`
+   para la carrocería y las piezas no negras de cada rueda para las llantas.
