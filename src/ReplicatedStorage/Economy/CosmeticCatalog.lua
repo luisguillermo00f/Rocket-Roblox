@@ -6,7 +6,7 @@
 -- Cosmetics are visual only: nothing here touches physics, hitboxes or match rules.
 --
 -- item = { id, slot, name, rarity, default?, price? (shop), level? (level reward), challenge? (weekly prize pool),
---          box? (lootbox only), params }
+--          box? (only from that lootbox: "standard" | "season1" | "minigames"; docs/lootboxes.md), params }
 local CosmeticCatalog = {}
 
 local rgb = Color3.fromRGB
@@ -23,8 +23,9 @@ CosmeticCatalog.RARITIES = {
 	rare = { name = "RARA", color = rgb(70, 150, 255), order = 2 },
 	epic = { name = "ÉPICA", color = rgb(170, 90, 255), order = 3 },
 	legendary = { name = "LEGENDARIA", color = rgb(255, 196, 64), order = 4 },
+	exotic = { name = "EXÓTICA", color = rgb(255, 60, 170), order = 5 }, -- lootboxes only
 }
-CosmeticCatalog.RARITY_ORDER = { "common", "rare", "epic", "legendary" }
+CosmeticCatalog.RARITY_ORDER = { "common", "rare", "epic", "legendary", "exotic" }
 
 -- shop price range per rarity (a test checks every price against it)
 CosmeticCatalog.PRICE_RANGE = {
@@ -134,6 +135,46 @@ local ITEMS: { Item } = {
 	{ id = "frame_gold", slot = "frame", name = "DORADO", rarity = "epic", price = 1100, params = { color = rgb(255, 196, 64), thickness = 5 } },
 	{ id = "frame_neon", slot = "frame", name = "NEÓN", rarity = "epic", challenge = true, params = { gradient = { rgb(40, 230, 255), rgb(170, 80, 255) }, thickness = 5, spin = true } },
 	{ id = "frame_fire", slot = "frame", name = "EN LLAMAS", rarity = "legendary", price = 2400, params = { gradient = { rgb(255, 60, 20), rgb(255, 220, 60) }, thickness = 6, spin = true } },
+
+	-- ================================================================ lootbox-only items (docs/lootboxes.md §2)
+	-- CAJA ESTÁNDAR: exotics
+	{ id = "boost_comet", slot = "boost", name = "COLA DE COMETA", rarity = "exotic", box = "standard", params = {
+		flame = { rgb(255, 255, 255), rgb(90, 230, 255) }, trail = { rgb(255, 255, 255), rgb(60, 200, 255) }, trailLife = 0.9, trailWidth = 1.2,
+		light = rgb(140, 230, 255), extra = { texture = "sparkles", color = rgb(200, 245, 255) } } },
+	{ id = "goal_galaxy", slot = "goal", name = "GALAXIA", rarity = "exotic", box = "standard", params = { style = "blackhole", color = rgb(90, 120, 255) } },
+	{ id = "primary_forcefield", slot = "primary", name = "CAMPO DE FUERZA", rarity = "exotic", box = "standard", params = { shade = 0.1, sat = 1, material = M.ForceField, reflectance = 0 } },
+	-- CAJA DE TEMPORADA 1: NITRO
+	{ id = "secondary_nitro", slot = "secondary", name = "NITRO", rarity = "common", box = "season1", params = { color = rgb(0, 200, 180) } },
+	{ id = "frame_nitro", slot = "frame", name = "NITRO", rarity = "common", box = "season1", params = { color = rgb(0, 200, 180), thickness = 3 } },
+	{ id = "title_season1", slot = "title", name = "TEMPORADA 1", rarity = "common", box = "season1", params = { text = "TEMPORADA 1", color = rgb(0, 200, 180) } },
+	{ id = "primary_carbonfiber", slot = "primary", name = "FIBRA DE CARBONO", rarity = "rare", box = "season1", params = { shade = -0.4, sat = 0.9, material = M.Slate, reflectance = 0.05 } },
+	{ id = "boost_nitro", slot = "boost", name = "DESCARGA NITRO", rarity = "rare", box = "season1", params = {
+		flame = { rgb(230, 255, 250), rgb(0, 200, 180) }, trail = { rgb(230, 255, 250), rgb(0, 200, 180) }, light = rgb(60, 230, 210), extra = { texture = "sparkles", color = rgb(120, 255, 235) } } },
+	{ id = "wheels_nitro", slot = "wheels", name = "LLANTAS NITRO", rarity = "rare", box = "season1", params = { color = rgb(0, 200, 180), material = M.Neon } },
+	{ id = "goal_nitro", slot = "goal", name = "ONDA NITRO", rarity = "epic", box = "season1", params = { style = "supernova" } },
+	{ id = "title_supersonic", slot = "title", name = "SUPERSÓNICO", rarity = "epic", box = "season1", params = { text = "SUPERSÓNICO", color = rgb(120, 255, 235), glow = true } },
+	{ id = "boost_hyperdrive", slot = "boost", name = "HIPERESPACIO", rarity = "legendary", box = "season1", params = {
+		flame = { rgb(255, 255, 255), rgb(170, 220, 255) }, trail = { rgb(255, 255, 255), rgb(150, 200, 255) }, trailLife = 0.7, trailWidth = 0.6, light = rgb(230, 240, 255),
+		extra = { texture = "sparkles", color = rgb(255, 255, 255) } } },
+	{ id = "primary_iridescent", slot = "primary", name = "IRISADO", rarity = "legendary", box = "season1", params = { shade = 0.2, sat = 1.2, material = M.Glass, reflectance = 0.5 } },
+	{ id = "wheels_hologram", slot = "wheels", name = "HOLOGRAMA", rarity = "exotic", box = "season1", params = { color = rgb(60, 230, 255), material = M.ForceField, glow = true } },
+	{ id = "frame_aurora", slot = "frame", name = "AURORA", rarity = "exotic", box = "season1", params = { gradient = { rgb(60, 255, 180), rgb(170, 80, 255) }, thickness = 6, spin = true } },
+	-- CAJA DE MINIJUEGOS
+	{ id = "title_partygoer", slot = "title", name = "FIESTERO", rarity = "common", box = "minigames", params = { text = "FIESTERO", color = rgb(255, 140, 220) } },
+	{ id = "secondary_bubblegum", slot = "secondary", name = "CHICLE", rarity = "common", box = "minigames", params = { color = rgb(255, 140, 200) } },
+	{ id = "frame_confetti", slot = "frame", name = "CONFETI", rarity = "common", box = "minigames", params = { gradient = { rgb(255, 90, 90), rgb(90, 180, 255) }, thickness = 3 } },
+	{ id = "boost_bubbles", slot = "boost", name = "BURBUJAS", rarity = "rare", box = "minigames", params = {
+		flame = { rgb(230, 250, 255), rgb(150, 220, 255) }, trail = { rgb(230, 250, 255), rgb(150, 220, 255) }, flameSize = 1.3, light = false,
+		extra = { color = rgb(200, 240, 255) } } },
+	{ id = "wheels_candy", slot = "wheels", name = "CARAMELO", rarity = "rare", box = "minigames", params = { color = rgb(230, 40, 60), material = M.Neon } },
+	{ id = "goal_pinata", slot = "goal", name = "PIÑATA", rarity = "epic", box = "minigames", params = { style = "confetti",
+		colors = { rgb(255, 60, 160), rgb(255, 230, 60), rgb(60, 220, 255), rgb(120, 255, 90) } } },
+	{ id = "title_partychamp", slot = "title", name = "CAMPEÓN DE FIESTA", rarity = "epic", box = "minigames", params = { text = "CAMPEÓN DE FIESTA", color = rgb(255, 196, 64) } },
+	{ id = "boost_disco", slot = "boost", name = "DISCO", rarity = "legendary", box = "minigames", params = {
+		flame = { rgb(255, 255, 255), rgb(255, 80, 200) }, rainbow = true, trailLife = 0.6, light = rgb(255, 120, 230), extra = { texture = "sparkles", color = rgb(255, 255, 255) } } },
+	{ id = "frame_crown", slot = "frame", name = "CORONA", rarity = "legendary", box = "minigames", params = { gradient = { rgb(255, 240, 150), rgb(255, 170, 30) }, thickness = 7, spin = true } },
+	{ id = "goal_partyblast", slot = "goal", name = "FIESTA TOTAL", rarity = "exotic", box = "minigames", params = { style = "fireworks",
+		colors = { rgb(255, 60, 160), rgb(255, 230, 60), rgb(60, 220, 255), rgb(120, 255, 90), rgb(255, 140, 40) } } },
 }
 
 local BY_ID: { [string]: Item } = {}
