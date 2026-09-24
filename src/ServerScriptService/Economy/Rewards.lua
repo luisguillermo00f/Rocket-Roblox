@@ -20,7 +20,8 @@ local LIMITS: { [string]: number } = { goals = 40, assists = 40, saves = 60, epi
 Rewards.LIMITS = LIMITS
 
 -- hooks: fn(profile, level, breakdown) when a level is reached ; fn(profile, completions, allWeekly, breakdown)
--- after challenges complete ; fn(profile, source, breakdown, now) after an eligible result (drops)
+-- after challenges complete ; fn(profile, source, breakdown, now) after an eligible result (drops).
+-- breakdown.at is the result's time (the `now` the caller passed).
 Rewards.LevelHooks = {} :: { (any, number, any) -> () }
 Rewards.ChallengeHooks = {} :: { (any, { any }, boolean, any) -> () }
 Rewards.ResultHooks = {} :: { (any, string, any, number) -> () }
@@ -35,16 +36,16 @@ local function num(v: any, lo: number, hi: number): number
 end
 
 export type Breakdown = {
-	source: string, eligible: boolean, reason: string?,
+	source: string, at: number, eligible: boolean, reason: string?,
 	xp: number, credits: number, capped: boolean, firstWin: boolean,
 	levelFrom: number, levelTo: number, levels: { number }, levelCredits: number,
 	challenges: { any }, items: { any }, boxes: { any },
 }
 
-local function newBreakdown(profile: any, source: string): Breakdown
+local function newBreakdown(profile: any, source: string, now: number): Breakdown
 	local level = Progression.FromXp(profile.xp)
 	return {
-		source = source, eligible = true, reason = nil,
+		source = source, at = now, eligible = true, reason = nil,
 		xp = 0, credits = 0, capped = false, firstWin = false,
 		levelFrom = level, levelTo = level, levels = {}, levelCredits = 0,
 		challenges = {}, items = {}, boxes = {},
@@ -180,7 +181,7 @@ function Rewards.ApplyMatch(profile: any, raw: any, trusted: boolean, now: numbe
 	d.bestPinchKmh = math.max(d.bestPinchKmh, num(raw.bestPinchKmh, 0, 400))
 
 	Rewards.EnsureDay(profile, now)
-	local b = newBreakdown(profile, source)
+	local b = newBreakdown(profile, source, now)
 	local e = profile.econ
 	if source == "local" then
 		if now - e.lastLocal < Config.LOCAL_MIN_INTERVAL then
@@ -209,7 +210,7 @@ function Rewards.ApplyMinigame(profile: any, raw: any, now: number): Breakdown?
 	if placement == 1 then profile.minigameWins += 1 end
 
 	Rewards.EnsureDay(profile, now)
-	local b = newBreakdown(profile, source)
+	local b = newBreakdown(profile, source, now)
 	if type(raw.activeSeconds) == "number" and raw.activeSeconds < Config.MIN_MINIGAME_SECONDS then
 		b.eligible, b.reason = false, "short"
 		return b

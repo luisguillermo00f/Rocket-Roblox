@@ -137,10 +137,11 @@ end)
 
 test("recompensa: créditos de subida de nivel una sola vez aunque se suban varios", function()
 	local p = fresh()
-	local bd: any = { xp = 0, credits = 0, levels = {}, levelCredits = 0, levelTo = 1 }
+	local bd: any = { xp = 0, credits = 0, levels = {}, levelCredits = 0, levelTo = 1, items = {}, at = NOON }
 	Rewards.Grant(p, Progression.TotalFor(12), 0, bd) -- 1 -> 12 at once
 	local want = 0
 	for L = 2, 12 do want += Progression.LevelCredits(L) end
+	for _, it in bd.items do want += it.refund or 0 end -- (level items are new here: no refunds)
 	local once = p.credits == want and #bd.levels == 11
 	Rewards.Grant(p, 0, 0, bd) -- nothing new
 	return once and p.credits == want and p.rewardedLevel == 12, string.format("%d vs %d", p.credits, want)

@@ -9,10 +9,12 @@
 local RS = game:GetService("ReplicatedStorage")
 local Progression = require(RS:WaitForChild("Game"):WaitForChild("Progression"))
 local Config = require(RS:WaitForChild("Economy"):WaitForChild("EconomyConfig"))
+local CosmeticCatalog = require(RS:WaitForChild("Economy"):WaitForChild("CosmeticCatalog"))
+local Inventory = require(script.Parent:WaitForChild("Inventory"))
 
 local ProfileSchema = {}
 
-ProfileSchema.VERSION = 2
+ProfileSchema.VERSION = 3
 
 -- flat numbers (v1 career stats + v2 economy); all >= 0
 local STATS: { [string]: number } = {
@@ -22,6 +24,8 @@ local STATS: { [string]: number } = {
 	points = 0, xp = 0, bestKmh = 0, streak = 0, bestStreak = 0, pinches = 0, bestPinchKmh = 0,
 	-- v2
 	credits = 0, creditsEarned = 0, rewardedLevel = 1, minigames = 0, minigameWins = 0,
+	-- v3
+	weeklyPrize = 0, -- week whose weekly prize was already given
 }
 ProfileSchema.STATS = STATS
 
@@ -54,6 +58,8 @@ function ProfileSchema.Defaults(): { [string]: any }
 	d.schema = ProfileSchema.VERSION
 	d.econ = table.clone(ECON)
 	d.challenges = emptyChallenges()
+	d.owned = {}
+	d.equipped = CosmeticCatalog.Defaults()
 	return d
 end
 
@@ -81,6 +87,19 @@ local function fill(d: { [string]: any })
 		if not validChallengeSlot(d.challenges[kind]) then d.challenges[kind] = { period = -1, list = {} } end
 	end
 	if d.settings ~= nil and type(d.settings) ~= "table" then d.settings = nil end
+	-- v3: owned = { [id] = time } (unknown ids are kept: an item may come back), equipped = { [slot] = id }
+	if type(d.owned) ~= "table" then d.owned = {} end
+	for k, v in d.owned do
+		if type(k) ~= "string" or type(v) ~= "number" then d.owned[k] = nil end
+	end
+	local defaults = CosmeticCatalog.Defaults()
+	if type(d.equipped) ~= "table" then d.equipped = {} end
+	for k, v in d.equipped do
+		if type(k) ~= "string" or type(v) ~= "string" then d.equipped[k] = nil end
+	end
+	for slot, id in defaults do
+		if d.equipped[slot] == nil then d.equipped[slot] = id end
+	end
 end
 
 -- MIGRATIONS[v] turns a vN profile into v(N+1). info collects what happened (for logs / the client).
@@ -100,9 +119,20 @@ MIGRATIONS[1] = function(d: any, info: any)
 	info.welcomeBonus = bonus
 end
 
+-- v2 -> v3: cosmetics. Everything from the level rewards the player already reached is given now (nobody loses
+-- what they had earned); everyone starts with the default loadout.
+MIGRATIONS[2] = function(d: any, info: any)
+	d.owned = if type(d.owned) == "table" then d.owned else {}
+	d.equipped = CosmeticCatalog.Defaults()
+	d.weeklyPrize = 0
+	local level = Progression.FromXp(if goodNum(d.xp) then d.xp else 0)
+	Inventory.GrantLevelItemsUpTo(d, level, 0)
+	info.levelItems = level
+end
+
 ProfileSchema.MIGRATIONS = MIGRATIONS
 
-export type Info = { from: number, fresh: boolean, readOnly: boolean, welcomeBonus: number? }
+export type Info = { from: number, fresh: boolean, readOnly: boolean, welcomeBonus: number?, levelItems: number? }
 
 -- raw: whatever the DataStore returned (nil for a new player). Returns a fresh table (raw is never modified).
 function ProfileSchema.Migrate(raw: any): ({ [string]: any }, Info)
