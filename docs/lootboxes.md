@@ -1,6 +1,6 @@
 # Cajas de botín — fase 3 (diseño)
 
-Estado: **PENDIENTE DE APROBACIÓN**. Se apoya en la fase 1 (`docs/progression.md`: créditos, perfil con bloqueo de
+Estado: **IMPLEMENTADO** (decisiones en la sección 14). Se apoya en la fase 1 (`docs/progression.md`: créditos, perfil con bloqueo de
 sesión, rotación UTC) y en la fase 2 (`docs/cosmetics.md`: catálogo, rarezas, inventario, `CosmeticsRequest`).
 
 Principios:
@@ -352,15 +352,81 @@ Todos usan `Random.new(semilla)` inyectado, así que son reproducibles.
 - **Migración:** v3 → v4 conserva todo lo anterior; las cajas retroactivas llegan como máximo a 5; la cadena
   v1 → v4 completa no pierde ningún campo.
 
-## 14. Decisiones que necesito que confirmes
+## 14. Decisiones
 
-- **A. Cajas retroactivas por nivel:** `floor(nivel/5)` Estándar, con un máximo de 5. Alternativa: 0.
-- **B. Modo para jugadores restringidos:** `"fragments"` (sin ningún azar; lo más seguro, por defecto) o `"free_only"`
-  (las cajas ganadas se abren al azar y solo se bloquea la compra).
-- **C. Acceso a CAJAS:** pestaña dentro de TIENDA (propuesta) o una palabra más en el menú principal (serían 8).
-- **D. Precios y probabilidades** de las secciones 3 y 6: ¿te valen como punto de partida? Están todos en
-  `LootboxConfig`/`LootboxData`.
+- **A. Cajas retroactivas por nivel:** `floor(nivel/5)` Estándar, máximo 5. **Aprobado.**
+- **B. Modo para jugadores restringidos:** **pendiente de definir.** Queda configurable en
+  `LootboxConfig.RESTRICTED_MODE`: por defecto `"fragments"` (sin ningún azar, lo más seguro) y `"free_only"` como
+  alternativa. Ambos modos están implementados y tienen tests.
+- **C. CAJAS como pestaña de TIENDA** (OBJETOS | CAJAS, LB/RB o Q/E para cambiar). **Aprobado.**
+- **D. Precio y probabilidades estipulados en la caja antes de tirar.** Implementado así:
+  - cada caja declara en `LootboxData` su precio, sus probabilidades por rareza (en puntos básicos que suman 10 000),
+    los pesos de cada objeto y su garantía. El servidor tira con **esos mismos datos**;
+  - la pantalla CAJAS muestra siempre el precio y la tabla de probabilidades (por caja y media con garantía) junto a
+    ABRIR / COMPRAR, y PROBABILIDADES lista el % exacto de cada objeto. La confirmación de compra repite el resumen;
+  - cada petición `open` / `buy` lleva `OddsVersion(box)`, una huella de precio, probabilidades, objetos, pesos y
+    garantía. Si no coincide con la del servidor, **se rechaza sin tirar ni cobrar**. Así nadie puede abrir una caja
+    con unas probabilidades distintas de las que tenía en pantalla.
+
+## 15. Cambios respecto al diseño
+
+- `LootboxService` se divide en `LootboxRequests` (la lógica de una petición, con las dependencias inyectadas y con
+  tests) y `LootboxService` (conecta el remote con ProfileStore, PolicyService y `Random.new()`).
+- `LootboxConfig.STUDIO_POLICY` (solo en Studio): fuerza `"restricted"` o `"unrestricted"` para probar los dos
+  flujos. En servidores reales se ignora.
+- GALAXIA, PIÑATA y FIESTA TOTAL reutilizan estilos de explosión existentes (agujero negro, confeti y fuegos
+  artificiales) con su propia paleta. El pulido visual queda para Studio.
+- La animación es 2D (GUI): los `ParticleEmitter` no se ven dentro de un `ViewportFrame`.
+- La temporada 1 va del 21/09/2026 al 01/01/2027 (UTC) para que se pueda probar ya. Se cambia en
+  `LootboxConfig.SEASON`.
+
+---
 
 ## Probar en Studio
 
-*(Se completa con los pasos exactos al terminar la implementación.)*
+Requisitos: los de las fases 1 y 2. Sin API Services también se puede abrir y comprar en Studio (el perfil es de
+sesión). Para tener material de prueba, en la barra de comandos del **servidor** (Play → pestaña Server):
+
+```lua
+local P = require(game.ServerScriptService.Economy.ProfileStore).Get(game.Players.TU_NOMBRE)
+P.credits = 20000; P.boxes.standard = 20; P.boxes.season1 = 5; P.boxes.minigames = 5
+require(game.ServerScriptService.Economy.ProfileStore).Push(game.Players.TU_NOMBRE)
+```
+
+1. **Tests:** `print(require(game.ServerScriptService.Economy.LootboxTests).RunAll(true))` → **29 / 29**, en unos
+   segundos (son 600 000 tiradas). Las otras suites: `EconomyTests` 36/36 y `CosmeticsTests` 23/23.
+2. **Transparencia:** TIENDA → pestaña **CAJAS**. En cada caja se ven, **antes** de pulsar nada: el precio, la tabla
+   de 5 rarezas con «POR CAJA» (Estándar: 60,00 / 27,00 / 10,00 / 2,50 / 0,50 %) y «MEDIA CON GARANTÍA», y los
+   contadores («ÉPICA O MEJOR GARANTIZADA COMO MUCHO EN 10 CAJAS · LEGENDARIA O MEJOR EN 40»). PROBABILIDADES lista
+   los 39 objetos de la Estándar con su %. La suma de la columna es 100 %.
+3. **Abrir:** ABRIR (×N). La caja espera en gris, tiembla con tics cada vez más rápidos, destello del color de la
+   rareza, estallido de partículas y tarjeta del objeto («¡NUEVO!» o «DUPLICADO → +N FRAGMENTOS»). A / ENTER / clic
+   la salta. ABRIR OTRA encadena y EQUIPAR lo equipa en el garaje.
+   - Una Legendaria o Exótica tiene la carga en blanco, los rayos y (la Exótica) el confeti arcoíris con sacudida.
+     Para forzarla sin suerte: `P.pity.standard = {epic = 0, legendary = 39}` → la siguiente Estándar es Legendaria
+     o Exótica y lleva la etiqueta GARANTÍA.
+4. **Desconexión a mitad:** pulsa ABRIR y cierra el cliente (Stop) durante el temblor. Vuelve a entrar: el objeto ya
+   es tuyo (GARAJE), la caja está descontada y en HISTORIAL aparece la entrada (y el aviso «¡TIENES OBJETOS NUEVOS!»).
+   Con API Services activado, el DataStore ya lo tenía antes de que el cliente recibiera la respuesta.
+5. **Spam:** pulsa ABRIR muchas veces seguidas o manda 10 peticiones desde la barra de comandos del cliente:
+   `for i = 1, 10 do task.spawn(function() print(game.ReplicatedStorage.Remotes.LootboxRequest:InvokeServer("open", {box = "standard", requestId = "spam-test-1", oddsVersion = require(game.ReplicatedStorage.Economy.LootboxData).OddsVersion(require(game.ReplicatedStorage.Economy.LootboxData).Get("standard"))})) end) end`
+   → como mucho **una** caja gastada. Las demás respuestas son `busy` o el mismo resultado repetido.
+   Con `oddsVersion = 1` → «LAS PROBABILIDADES DE ESTA CAJA HAN CAMBIADO…» y no se gasta nada.
+6. **Comprar:** COMPRAR · 450 → la confirmación con el resumen de probabilidades → la caja aparece (×N+1) y el saldo
+   baja. Después de 10 compras en el mismo día: «YA HAS COMPRADO 10 CAJAS HOY».
+7. **Duplicados y fragmentos:** DUPLICADOS: FRAGMENTOS / CRÉDITOS cambia el modo. Abre hasta repetir (Estándar
+   común) → +5 fragmentos (o +30 créditos). FRAGMENTOS · N → lista de la caja con el coste. Canjea un común (50).
+8. **PolicyService restringido:** en `LootboxConfig`, `STUDIO_POLICY = "restricted"` y Play:
+   - no hay precio ni botón COMPRAR (y `InvokeServer("buy", …)` devuelve «LA COMPRA DE CAJAS NO ESTÁ DISPONIBLE…»);
+   - con `RESTRICTED_MODE = "fragments"`: no hay ABRIR, hay **CANJEAR CAJA** (+60 fragmentos Estándar) y
+     **CONTENIDO** muestra coste en fragmentos en lugar de %;
+   - con `RESTRICTED_MODE = "free_only"`: ABRIR sí, COMPRAR no.
+   - Vuelve a poner `STUDIO_POLICY = nil` al terminar.
+9. **Cómo se ganan** (con 2 jugadores en *Clients and Servers*):
+   - subir al nivel 5 → «+1 CAJA ESTÁNDAR (NIVEL)» en la franja del resultado (para forzarlo: `P.xp = 1590` y termina
+     una partida);
+   - drop al terminar una partida en línea: con suerte (12 %) aparece «+1 CAJA … (AL TERMINAR LA PARTIDA)», como
+     mucho 2 al día. Para verlo sin esperar, pon `DROP_CHANCE.online_pvp = 1` en `LootboxConfig` temporalmente;
+   - una partida contra bots sin conexión **nunca** da cajas.
+10. **Robux:** `ROBUX_ENABLED = false` → en ningún sitio aparece un precio en Robux. No actives el flag sin cumplir la
+    lista de la sección 7.3.

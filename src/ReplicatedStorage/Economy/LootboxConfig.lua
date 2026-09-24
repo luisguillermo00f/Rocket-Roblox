@@ -21,6 +21,9 @@ LootboxConfig.DAILY_BUY_CAP = 10 -- boxes bought with credits per UTC day (brake
 --   "free_only": earned boxes open at random like everyone else's; only buying is blocked
 LootboxConfig.RESTRICTED_MODE = "fragments"
 LootboxConfig.POLICY_RETRY = 60 -- s before asking PolicyService again after a failure (meanwhile: restricted)
+-- Studio only (ignored in live servers): force the policy to test both flows - nil (ask PolicyService),
+-- "restricted" or "unrestricted"
+LootboxConfig.STUDIO_POLICY = nil :: string?
 
 -- ---------------------------------------------------------------- duplicates and fragments (per rarity)
 LootboxConfig.DUP_FRAGMENTS = { common = 5, rare = 15, epic = 40, legendary = 100, exotic = 200 }

@@ -5,6 +5,7 @@
 -- Policy.Fetch can be replaced in tests.
 local Players = game:GetService("Players")
 local PolicyService = game:GetService("PolicyService")
+local RunService = game:GetService("RunService")
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS:WaitForChild("Economy"):WaitForChild("LootboxConfig"))
 
@@ -29,6 +30,11 @@ function Policy.Evaluate(fetch: (Player) -> any, player: Player): (boolean, bool
 end
 
 function Policy.Refresh(player: Player)
+	local forced = Config.STUDIO_POLICY
+	if forced and RunService:IsStudio() then
+		cache[player] = { restricted = forced == "restricted", ok = true, at = os.clock() }
+		return
+	end
 	local restricted, ok = Policy.Evaluate(Policy.Fetch, player)
 	cache[player] = { restricted = restricted, ok = ok, at = os.clock() }
 	if not ok then
