@@ -423,7 +423,7 @@ require(game.ServerScriptService.Economy.ProfileStore).Push(game.Players.TU_NOMB
    - con `RESTRICTED_MODE = "free_only"`: ABRIR sí, COMPRAR no.
    - Vuelve a poner `STUDIO_POLICY = nil` al terminar.
 9. **Cómo se ganan** (con 2 jugadores en *Clients and Servers*):
-   - subir al nivel 5 → «+1 CAJA ESTÁNDAR (NIVEL)» en la franja del resultado (para forzarlo: `P.xp = 1590` y termina
+   - subir al nivel 5 → «+1 CAJA ESTÁNDAR (NIVEL)» en la franja del resultado (para forzarlo: `P.xp = 1590; P.rewardedLevel = 4` y termina
      una partida);
    - drop al terminar una partida en línea: con suerte (12 %) aparece «+1 CAJA … (AL TERMINAR LA PARTIDA)», como
      mucho 2 al día. Para verlo sin esperar, pon `DROP_CHANCE.online_pvp = 1` en `LootboxConfig` temporalmente;
