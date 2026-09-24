@@ -13,6 +13,7 @@ local Economy = script.Parent:WaitForChild("Economy")
 local ProfileStore = require(Economy:WaitForChild("ProfileStore"))
 local Rewards = require(Economy:WaitForChild("Rewards"))
 require(Economy:WaitForChild("CosmeticsService")).Init() -- inventory, shop, equip (docs/cosmetics.md)
+require(Economy:WaitForChild("LootboxService")).Init() -- lootboxes, PolicyService (docs/lootboxes.md)
 
 local getProfile = ProfileStore.Remote("RemoteFunction", "GetProfile") :: RemoteFunction
 local submitMatch = ProfileStore.Remote("RemoteEvent", "SubmitMatch") :: RemoteEvent

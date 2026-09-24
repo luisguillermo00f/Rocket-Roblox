@@ -11,10 +11,11 @@ local Progression = require(RS:WaitForChild("Game"):WaitForChild("Progression"))
 local Config = require(RS:WaitForChild("Economy"):WaitForChild("EconomyConfig"))
 local CosmeticCatalog = require(RS:WaitForChild("Economy"):WaitForChild("CosmeticCatalog"))
 local Inventory = require(script.Parent:WaitForChild("Inventory"))
+local LootboxConfig = require(RS:WaitForChild("Economy"):WaitForChild("LootboxConfig"))
 
 local ProfileSchema = {}
 
-ProfileSchema.VERSION = 3
+ProfileSchema.VERSION = 4
 
 -- flat numbers (v1 career stats + v2 economy); all >= 0
 local STATS: { [string]: number } = {
@@ -26,11 +27,13 @@ local STATS: { [string]: number } = {
 	credits = 0, creditsEarned = 0, rewardedLevel = 1, minigames = 0, minigameWins = 0,
 	-- v3
 	weeklyPrize = 0, -- week whose weekly prize was already given
+	-- v4
+	boxesOpened = 0,
 }
 ProfileSchema.STATS = STATS
 
 -- counters of the current UTC day (Rewards.EnsureDay resets them)
-local ECON: { [string]: number } = { day = -1, earned = 0, localCredits = 0, localXp = 0, lastLocal = 0, firstWinDay = -1 }
+local ECON: { [string]: number } = { day = -1, earned = 0, localCredits = 0, localXp = 0, lastLocal = 0, firstWinDay = -1, drops = 0, boxBuys = 0 }
 ProfileSchema.ECON = ECON
 
 local function goodNum(v: any): boolean
@@ -60,6 +63,7 @@ function ProfileSchema.Defaults(): { [string]: any }
 	d.challenges = emptyChallenges()
 	d.owned = {}
 	d.equipped = CosmeticCatalog.Defaults()
+	d.boxes, d.pity, d.fragments, d.boxHistory, d.boxRequests, d.dupMode = {}, {}, {}, {}, {}, "fragments"
 	return d
 end
 
@@ -100,6 +104,23 @@ local function fill(d: { [string]: any })
 	for slot, id in defaults do
 		if d.equipped[slot] == nil then d.equipped[slot] = id end
 	end
+	-- v4: boxes / fragments = { [boxId] = n }, pity = { [boxId] = { epic, legendary } }, history + answered requests
+	for _, k in { "boxes", "fragments" } do
+		if type(d[k]) ~= "table" then d[k] = {} end
+		for id, n in d[k] do
+			if type(id) ~= "string" or not goodNum(n) then d[k][id] = nil end
+		end
+	end
+	if type(d.pity) ~= "table" then d.pity = {} end
+	for id, pt in d.pity do
+		if type(id) ~= "string" or type(pt) ~= "table" or not goodNum(pt.epic) or not goodNum(pt.legendary) then d.pity[id] = nil end
+	end
+	for _, k in { "boxHistory", "boxRequests" } do
+		if type(d[k]) ~= "table" then d[k] = {} end
+	end
+	while #d.boxHistory > LootboxConfig.HISTORY_SIZE do table.remove(d.boxHistory, 1) end
+	while #d.boxRequests > LootboxConfig.REQUEST_MEMORY do table.remove(d.boxRequests, 1) end
+	if d.dupMode ~= "fragments" and d.dupMode ~= "credits" then d.dupMode = "fragments" end
 end
 
 -- MIGRATIONS[v] turns a vN profile into v(N+1). info collects what happened (for logs / the client).
@@ -130,9 +151,19 @@ MIGRATIONS[2] = function(d: any, info: any)
 	info.levelItems = level
 end
 
+-- v3 -> v4: lootboxes. Levels already reached give their standard boxes (one per 5 levels), at most
+-- RETRO_LEVEL_BOXES_MAX; pity starts at 0.
+MIGRATIONS[3] = function(d: any, info: any)
+	local level = Progression.FromXp(if goodNum(d.xp) then d.xp else 0)
+	local retro = math.min(LootboxConfig.RETRO_LEVEL_BOXES_MAX, level // LootboxConfig.LEVEL_BOX_EVERY)
+	d.boxes = { standard = retro }
+	d.pity, d.fragments, d.boxHistory, d.boxRequests, d.dupMode = {}, {}, {}, {}, "fragments"
+	info.retroBoxes = retro
+end
+
 ProfileSchema.MIGRATIONS = MIGRATIONS
 
-export type Info = { from: number, fresh: boolean, readOnly: boolean, welcomeBonus: number?, levelItems: number? }
+export type Info = { from: number, fresh: boolean, readOnly: boolean, welcomeBonus: number?, levelItems: number?, retroBoxes: number? }
 
 -- raw: whatever the DataStore returned (nil for a new player). Returns a fresh table (raw is never modified).
 function ProfileSchema.Migrate(raw: any): ({ [string]: any }, Info)
