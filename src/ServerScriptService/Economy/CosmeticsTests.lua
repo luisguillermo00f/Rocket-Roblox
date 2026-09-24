@@ -76,7 +76,10 @@ test("compra inválida: objeto fuera de la rotación de hoy", function()
 	local sale = ShopRotation.OnSale(NOON)
 	local outside = nil
 	for _, it in Catalog.Items do
-		if it.price and not sale[it.id] then outside = it.id break end
+		if it.price and not sale[it.id] then
+			outside = it.id
+			break
+		end
 	end
 	local ok, err = Inventory.Buy(p, outside, NOON)
 	return outside ~= nil and not ok and err == "YA NO ESTÁ EN LA TIENDA" and p.credits == 9000, tostring(outside)
@@ -97,7 +100,10 @@ test("compra: margen de 60 s tras medianoche para lo de ayer", function()
 	local today = ShopRotation.OnSale(midnight + 3600)
 	local yesterdayOnly = nil
 	for _, id in ShopRotation.Daily(DAY0) do
-		if not today[id] then yesterdayOnly = id break end
+		if not today[id] then
+			yesterdayOnly = id
+			break
+		end
 	end
 	if not yesterdayOnly then return false, "sin candidato" end
 	local p1, p2 = fresh(9000), fresh(9000)
