@@ -315,13 +315,21 @@ end
 function Soccar.OnResults(self: any)
 	local submit = self.session.service.submitMatch
 	if not submit then return end
+	-- humans still in the match per team (leavers were handed to bots): the profile rewards playing people
+	local humans = { [0] = 0, [1] = 0 }
+	for _, m in self.session.members do
+		if m.kind == "player" and m.player then humans[m.team or 0] = (humans[m.team or 0] or 0) + 1 end
+	end
 	for id, me in self.events do
 		local m = self.session.byId[id]
 		if m and m.player and m.player.Parent then
 			local result = if self.winnerTeam == nil then "draw" elseif m.team == self.winnerTeam then "win" else "loss"
 			local st = me.stats
+			local team = m.team or 0
 			submit(m.player, {
 				result = result, points = me.points, mode = self.mode, ranked = self.ranked, online = true,
+				humanOpponents = humans[1 - team] or 0, activeSeconds = self.simTime,
+				scoreFor = self.score[team], scoreAgainst = self.score[1 - team],
 				goals = st.goals, assists = st.assists, saves = st.saves, epicSaves = st.epicSaves, shots = st.shots,
 				clears = st.clears, demos = st.demos, aerials = st.aerials, bestKmh = st.bestKmh,
 				pinches = st.pinches, bestPinchKmh = st.bestPinchKmh,

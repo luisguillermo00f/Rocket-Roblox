@@ -162,14 +162,19 @@ function MinigameSession.SetState(self: any, to: string)
 	self.timer:Begin(to, duration)
 	self:Broadcast("phase", { state = to, startTime = self.timer.startTime, endTime = self.timer.endTime })
 	if to == State.ACTIVE then
+		self.activeAt = os.clock()
 		self.minigame:Start()
 	elseif to == State.ENDING then
+		self.activeFor = os.clock() - (self.activeAt or os.clock())
 		self.minigame:End()
 		self:SendSnapshots()
 	elseif to == State.RESULTS then
 		local placements = self.minigame:GetPlacements()
 		-- Party Points only in party rounds (an online match has its own reward: the profile)
 		local awarded = if self.def.NoPartyPoints then {} else self.service.party:AwardPartyPoints(self.party, placements)
+		if not self.def.NoPartyPoints then
+			self:SubmitRound(placements)
+		end
 		local rows = {}
 		for _, p in placements do
 			local m = self.byId[p.id]
@@ -186,6 +191,23 @@ function MinigameSession.SetState(self: any, to: string)
 		end
 	elseif to == State.CLEANUP then
 		self:Finish()
+	end
+end
+
+-- party round finished: each human still in the round gets their placement written to their profile (XP, credits,
+-- challenges - decided by ProfileService). Leavers are no longer members, and a cancelled round never gets here.
+function MinigameSession.SubmitRound(self: any, placements: { any })
+	local submit = self.service.submitMatch
+	if not submit then return end
+	local humans = self:Humans()
+	for _, pl in placements do
+		local m = self.byId[pl.id]
+		if m and m.kind == "player" and m.player and m.player.Parent then
+			submit(m.player, {
+				kind = "minigame", minigameId = self.def.Id, placement = pl.placement,
+				humans = #humans, activeSeconds = self.activeFor or 0,
+			})
+		end
 	end
 end
 
