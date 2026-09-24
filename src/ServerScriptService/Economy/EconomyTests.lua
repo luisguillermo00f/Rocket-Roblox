@@ -42,7 +42,7 @@ end
 
 local function match(result: string, points: number, extra: { [string]: any }?): any
 	local r: { [string]: any } = { result = result, points = points, mode = "1v1", goals = 0 }
-	for k, v in extra or {} do r[k] = v end
+	for k, v in (extra or {}) :: { [string]: any } do r[k] = v end
 	return r
 end
 local ONLINE = { online = true, humanOpponents = 1, activeSeconds = 300 }
@@ -354,7 +354,7 @@ test("progreso: partidas locales no cuentan en retos en línea", function()
 end)
 
 -- ================================================================ migration
-local V1 = {
+local V1: { [string]: any } = {
 	matches = 42, wins = 20, losses = 18, draws = 4, goals = 61, assists = 12, saves = 30, epicSaves = 3, shots = 90,
 	clears = 40, demos = 7, aerials = 33, points = 21000, xp = 21850 + 10, bestKmh = 131, streak = 2, bestStreak = 6,
 	pinches = 2, bestPinchKmh = 140,

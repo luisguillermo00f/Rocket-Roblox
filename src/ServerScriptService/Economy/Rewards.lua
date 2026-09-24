@@ -16,7 +16,7 @@ local Challenges = require(script.Parent:WaitForChild("Challenges"))
 local Rewards = {}
 
 -- per-match ceilings (a 5-minute match can't legitimately exceed these)
-local LIMITS = { goals = 40, assists = 40, saves = 60, epicSaves = 40, shots = 100, clears = 100, demos = 60, aerials = 100, pinches = 60, points = 20000 }
+local LIMITS: { [string]: number } = { goals = 40, assists = 40, saves = 60, epicSaves = 40, shots = 100, clears = 100, demos = 60, aerials = 100, pinches = 60, points = 20000 }
 Rewards.LIMITS = LIMITS
 
 -- hooks: fn(profile, level, breakdown) when a level is reached ; fn(profile, completions, allWeekly, breakdown)

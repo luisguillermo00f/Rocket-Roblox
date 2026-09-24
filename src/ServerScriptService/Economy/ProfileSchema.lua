@@ -114,9 +114,9 @@ function ProfileSchema.Migrate(raw: any): ({ [string]: any }, Info)
 	end
 	local d = deepCopy(raw, 0)
 	d._lock = nil -- session lock lives in the store record only
-	local v = tonumber(d.schema)
-	if v == nil or v ~= v or v < 1 then v = 1 end
-	v = math.floor(v :: number)
+	local v: number = tonumber(d.schema) or 1
+	if v ~= v or v < 1 then v = 1 end
+	v = math.floor(v)
 	info.from = v
 	-- v1 stats first, so a migration reads clean numbers
 	for k in STATS do
