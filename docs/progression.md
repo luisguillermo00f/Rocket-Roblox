@@ -1,6 +1,6 @@
 # Progresión y economía — fase 1 (diseño)
 
-Estado: **PENDIENTE DE APROBACIÓN**. No hay código todavía.
+Estado: **IMPLEMENTADO** (diseño aprobado; decisiones en la sección 8). Pasos de verificación al final.
 
 Este documento define niveles/XP, la moneda **Créditos**, los desafíos diarios/semanales y cómo se guarda todo en el
 perfil. Todo se calcula **solo en el servidor**: el cliente muestra lo que el servidor le manda.
@@ -143,8 +143,9 @@ Todas las cifras están en `ReplicatedStorage/Economy/EconomyConfig.lua` para po
   y el generador es propio en Luau puro con `bit32` (splitmix32), no `Random`, para que el resultado sea idéntico en
   cualquier servidor y en los tests, sea cual sea la versión del motor. Todos los jugadores tienen los mismos desafíos
   el mismo día.
-- **Restricciones de la elección:** 3 tipos distintos, como mucho **1 de minijuegos** y como mucho **1 solo-en-línea**
-  por lista, y nunca dos de la misma categoría. Así quien solo juega sin conexión puede completar al menos 2 de 3.
+- **Restricciones de la elección:** 3 tipos distintos, nunca dos de la misma categoría y como mucho **1** que no se
+  pueda completar sin conexión (en línea **o** minijuegos, sumados). Así quien solo juega sin conexión puede completar
+  siempre al menos 2 de 3.
 - El progreso se guarda por periodo: si el periodo guardado ≠ el actual, la lista se regenera con el progreso a 0 (lo
   no completado se pierde, como en RL).
 - **Recompensa automática:** al llegar al objetivo, el servidor da los créditos y la XP en el mismo momento; no hay
@@ -267,20 +268,25 @@ recompensa (60/80/100 los diarios, 300/400/500 los semanales).
 
 ```
 ReplicatedStorage/
-  Game/Progression.lua              (cambia) curva en forma cerrada, MatchXp(points, result, source), MinigameXp, LevelCredits
+  Game/Progression.lua              (cambia) curva en forma cerrada, MatchXp/MatchCredits(points, result, source),
+                                             MinigameXp/MinigameCredits, LevelCredits
+  Game/EconomyClient.lua            (nuevo)  caché del perfil en el cliente, escucha ProfileUpdate, Request()
+  Game/ChallengesScreen.lua         (nuevo)  pantalla DESAFÍOS
+  Game/MainMenu.lua                 (cambia) créditos en la tarjeta, palabra DESAFÍOS, ShowReward, MainMenu.UI
   Economy/EconomyConfig.lua         (nuevo)  todas las cifras: multiplicadores, topes, recompensas
   Economy/ChallengeCatalog.lua      (nuevo)  los 24 tipos + Rotation(periodIndex, kind) determinista
-  Economy/DateUtil.lua              (nuevo)  DayIndex, WeekIndex, SecondsToNextDay/Week, hash splitmix32
+  Economy/DateUtil.lua              (nuevo)  DayIndex, WeekIndex, SecondsToNextDay/Week, hash + splitmix32
 ServerScriptService/
-  ProfileService.server.lua         (cambia) carga/guardado v2 + bloqueo, remotes, llama a Economy
+  ProfileService.server.lua         (cambia) script fino: jugadores + remotes -> ProfileStore / Rewards
+  Economy/ProfileStore.lua          (nuevo)  DataStore v2 (+ lectura de v1), bloqueo de sesión, guardados, Summary, Push
   Economy/ProfileSchema.lua         (nuevo)  valores por defecto + migraciones (puro)
-  Economy/Rewards.lua               (nuevo)  ApplyMatch/ApplyMinigame(profile, result, now) -> desglose (puro)
-  Economy/Challenges.lua            (nuevo)  Ensure(profile, now) + Progress(profile, result, now) (puro)
+  Economy/Rewards.lua               (nuevo)  ApplyMatch/ApplyMinigame(profile, raw, ..., now) -> desglose (puro);
+                                             ganchos LevelHooks / ChallengeHooks / ResultHooks para las fases 2 y 3
+  Economy/Challenges.lua            (nuevo)  Ensure / Apply / View (puro)
   Economy/EconomyTests.lua          (nuevo)  RunAll()
-  PartyMinigameService/MinigameSession.lua    (1 gancho en RESULTS)
-  PartyMinigameService/Minigames/Soccar.lua   (añade humans / humanOpponents / scoreFor / scoreAgainst)
-StarterPlayerScripts/GameClient.client.lua     (envía scoreFor/scoreAgainst; escucha ProfileUpdate)
-Game/MainMenu.lua                    (créditos en la tarjeta + pantalla DESAFÍOS)
+  PartyMinigameService/MinigameSession.lua    (SubmitRound al llegar a RESULTS en rondas de fiesta)
+  PartyMinigameService/Minigames/Soccar.lua   (añade humanOpponents / activeSeconds / scoreFor / scoreAgainst)
+StarterPlayerScripts/GameClient.client.lua     (envía scoreFor/scoreAgainst; reenvía ProfileUpdate al menú)
 ```
 
 Los módulos puros reciben `now` como parámetro, así que los tests prueban el cambio de día y de semana sin esperar.
@@ -300,7 +306,11 @@ Los módulos puros reciben `now` como parámetro, así que los tests prueban el 
   - Mando: `InputGlyphs.PushPanel(g, primeraTarjeta, cerrar)`. Las tarjetas son `TextButton` seleccionables (la
     navegación del motor mueve el marco dorado) y B / Esc cierra. `HintBar` con «VOLVER».
 - **Pantalla de resultado** (local y en línea): «+X XP» con el estimado y, al llegar `ProfileUpdate`, se sustituye
-  por el real y se añade «+Y CRÉDITOS» y «DESAFÍO COMPLETADO: …» si lo hay.
+  por el real y aparece una franja bajo el panel con «+Y CRÉDITOS», «PRIMERA VICTORIA DEL DÍA», «¡NIVEL N!», «TOPE
+  DIARIO…» y «DESAFÍO COMPLETADO: …» según corresponda. Las rondas de minijuegos usan su propia pantalla de resultados
+  (PartyUI), así que ahí lo ganado se ve en la tarjeta del menú y en DESAFÍOS.
+- **Bono de bienvenida:** la primera vez que un perfil antiguo se migra, la tarjeta muestra «BONO DE BIENVENIDA +N
+  CRÉDITOS» durante unos segundos.
 
 ---
 
@@ -323,17 +333,59 @@ Los módulos puros reciben `now` como parámetro, así que los tests prueban el 
 
 ---
 
-## 8. Decisiones que necesito que confirmes
+## 8. Decisiones (confirmadas)
 
-- **A. Créditos por niveles ya alcanzados.** Propuesta: un **bono de bienvenida único** de `min(3 000, 100·(nivel−1))`
-  créditos al migrar, y a partir de ahí los créditos por nivel como en la tabla 2.1. Alternativa: 0 retroactivo.
-- **B. Partidas sin conexión.** Propuesta: XP ×0,7 y créditos ×0,3 con subtope diario 90 créditos / 3 000 XP.
-  Alternativa más estricta: 0 créditos en local (solo XP).
-- **C. DataStore nuevo (`_v2`) con lectura de v1** como se describe en 5.3. Alternativa: seguir en `_v1` (más simple,
-  pero un servidor viejo abierto puede borrar créditos).
+- **A. Bono de bienvenida único** al migrar: `min(3 000, 100·(nivel−1))` créditos; los créditos por nivel cuentan a
+  partir del nivel actual (`rewardedLevel`). *(No se respondió explícitamente: se aplicó la propuesta; se cambia en
+  `EconomyConfig.WELCOME_BONUS`.)*
+- **B. Partidas sin conexión:** XP ×0,7 y créditos ×0,3 con subtope diario de 90 créditos / 3 000 XP. *(Igual: propuesta
+  aplicada; para dejarlo en 0 créditos basta `SOURCES["local"].credits = 0`.)*
+- **C. DataStore nuevo `SupersonicProfile_v2`** con lectura inicial de `_v1`. **Aprobado.**
 
 ---
 
 ## Probar en Studio
 
-*(Se completa con los pasos exactos al terminar la implementación.)*
+Antes de empezar: sincroniza con Rojo y, para probar el guardado, activa *Game Settings › Security › Enable Studio
+Access to API Services*. Sin eso todo funciona igual pero el perfil es de sesión (`persistent = false`) y la ventana
+de PERFIL lo dice.
+
+1. **Tests.** En la barra de comandos (vale en modo edición):
+   `print(require(game.ServerScriptService.Economy.EconomyTests).RunAll(true))` → debe terminar en **36 / 36 tests
+   passed**. Los tests de física siguen igual (`require(game.ReplicatedStorage.Physics.PhysicsTests).RunAll(true)`).
+2. **Migración de un perfil existente** (con API Services activado y una cuenta que ya tenga partidas en el juego):
+   - Play. La tarjeta del menú muestra el **mismo nivel que antes**, un contador de créditos (`N ◆`) y durante unos
+     segundos «BONO DE BIENVENIDA +N CRÉDITOS» (100 por nivel por encima del 1, máximo 3 000).
+   - PERFIL (P / Y): todas las estadísticas de carrera son las de antes y hay una línea «N CRÉDITOS» bajo la XP.
+   - Barra de comandos del servidor: `print(game:GetService("DataStoreService"):GetDataStore("SupersonicProfile_v1"):GetAsync("u_TU_USERID"))`
+     sigue devolviendo el perfil viejo **sin cambios** (sin `credits`, sin `schema`), y
+     `...GetDataStore("SupersonicProfile_v2"):GetAsync("u_TU_USERID")` devuelve el nuevo con `schema = 2` y `_lock`.
+   - Stop y Play otra vez: el bono **no** se repite y los créditos se conservan.
+3. **DESAFÍOS:** la nueva palabra del menú (entre GARAJE y ENTRENAMIENTO) abre el panel con 3 DIARIOS y 3 SEMANALES,
+   la cuenta atrás «SE RENUEVAN EN …» baja cada minuto y abajo pone «CRÉDITOS DE PARTIDAS HOY: X / 400».
+   - Con mando: las tarjetas se seleccionan con la cruceta (marco dorado), B cierra. Con teclado: ESC cierra. Al
+     cerrar, la pulsación no se cuela al menú de palabras.
+   - Como mucho 1 de las 3 tarjetas de cada columna lleva «· EN LÍNEA» o «· FIESTA».
+4. **Partida sin conexión** (JUGAR › CONTRA BOTS · SIN CONEXIÓN) hasta el final:
+   - La pantalla de resultado muestra «+X XP»; un instante después X cambia al valor real (×0,7) y aparece la franja
+     con «+Y CRÉDITOS» (pocos: ×0,3) y, si toca, «DESAFÍO COMPLETADO: …».
+   - Al volver al menú, la barra de XP y los créditos de la tarjeta suben animados y DESAFÍOS refleja el progreso
+     (goles, atajadas…).
+   - ENTRENAMIENTO no da nada (no se envía resultado).
+5. **Partida en línea** (*Test › Clients and Servers*, 2 jugadores, servidor local):
+   - Los dos en la cola 1V1 EN LÍNEA → al terminar, franja con créditos de la fuente «online_pvp» (la victoria da
+     ~35–40 + 50 de primera victoria del día).
+   - Un solo jugador en la cola (entra con bot a los 8 s) → recompensa reducida (online_bots, créditos ×0,5, sin
+     «PRIMERA VICTORIA DEL DÍA»).
+   - Salir a mitad de partida (el bot ocupa el coche) → quien sale no recibe nada; el que sigue sí.
+6. **Minijuego de fiesta** (2 jugadores en la misma fiesta, una ronda completa): al volver al menú, la tarjeta ha sumado
+   XP y créditos, y un desafío de FIESTA en pantalla (si hay uno hoy) avanza. Una ronda con el anfitrión solo y bots da
+   menos (×0,4 créditos).
+7. **Tope diario:** en la barra de comandos del servidor puedes forzarlo para verlo sin jugar 20 partidas:
+   `require(game.ServerScriptService.Economy.ProfileStore).Get(game.Players.TU_NOMBRE).econ.earned = 400`
+   → la siguiente partida muestra «TOPE DIARIO DE CRÉDITOS ALCANZADO», da XP pero no créditos de partida.
+8. **Salida sin errores:** en Output no debe haber `[ProfileStore] save failed` ni `hook failed`. Con API Services
+   desactivado solo debe aparecer una vez `DataStore unavailable, session-only profile`.
+9. **Al publicar:** después de *Publish*, usa **Shut Down All Servers** (o *Migrate to Latest Update*) para que no
+   quede ningún servidor con el código viejo: esos solo escriben en `_v1`, así que no pueden borrar créditos, pero lo
+   que alguien jugara allí tras migrar no pasaría a `_v2`.
