@@ -6,6 +6,7 @@
 -- A party lives on one server; its code works from any server (CodeDirectory teleports the joiner to it).
 local Players = game:GetService("Players")
 local CodeDirectory = require(script.Parent.CodeDirectory)
+local Cosmetics = require(game:GetService("ServerScriptService"):WaitForChild("Economy"):WaitForChild("CosmeticsService"))
 
 local PartyServer = {}
 PartyServer.__index = PartyServer
@@ -39,6 +40,7 @@ function PartyServer.State(self: any, party: any): any
 		table.insert(members, {
 			id = m.id, name = m.name, isBot = m.kind == "bot", userId = m.userId,
 			isHost = m.userId ~= nil and m.userId == party.hostUserId, points = party.points[m.id] or 0,
+			cosmetics = if m.kind == "player" and m.player then Cosmetics.LoadoutFor(m.player) else nil,
 		})
 	end
 	return {

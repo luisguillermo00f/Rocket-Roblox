@@ -22,6 +22,7 @@ local Timer = require(script.Parent.MinigameTimer)
 local Cleanup = require(script.Parent.MinigameCleanup)
 local SpawnManager = require(script.Parent.MinigameSpawnManager)
 local BotBase = require(script.Parent.MinigameBotController)
+local Cosmetics = require(game:GetService("ServerScriptService"):WaitForChild("Economy"):WaitForChild("CosmeticsService"))
 
 local MinigameSession = {}
 MinigameSession.__index = MinigameSession
@@ -121,9 +122,12 @@ function MinigameSession.LoadPayload(self: any): any
 	local participants = {}
 	for _, m in self.members do
 		local car = self.spawns:Get(m.id)
+		-- cosmetics come from the player's saved loadout (never from the client); bots wear the defaults
+		local look = if m.kind == "player" and m.player then Cosmetics.LoadoutFor(m.player) else nil
 		table.insert(participants, {
 			id = m.id, name = m.name, team = m.team, isBot = m.kind == "bot", userId = m.userId,
-			netId = car and car.netId, hitbox = m.hitbox or "Octane", skin = m.skin or "Octane",
+			netId = car and car.netId, hitbox = m.hitbox or "Octane",
+			skin = if look then Cosmetics.SkinOf(look) else m.skin or "Octane", cosmetics = look,
 		})
 	end
 	return {

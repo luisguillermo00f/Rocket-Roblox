@@ -193,9 +193,18 @@ function Soccar.Update(self: any, dt: number)
 			self.phase = "goal"
 			self.phaseT = 0
 			world.ballEnabled = false
+			-- scorer (same rule as MatchEvents: last touch of the scoring team, none on an own goal): the clients play
+			-- that player's goal explosion (cosmetic only)
+			local scorer = nil
+			local touches = self.board.touches
+			local last = touches[#touches]
+			if last and last.car.team == e.team then
+				local sm = session:MemberOfCar(last.car)
+				scorer = sm and sm.id
+			end
 			session:Broadcast("goal", {
 				team = e.team, scoreA = self.score[0], scoreB = self.score[1], pos = gp * BT,
-				kmh = math.floor(world.ball.body.vel.Magnitude * BT * MatchEvents.KMH + 0.5),
+				kmh = math.floor(world.ball.body.vel.Magnitude * BT * MatchEvents.KMH + 0.5), scorer = scorer,
 			})
 			self:PushClock()
 		elseif e.type == "demo" then
