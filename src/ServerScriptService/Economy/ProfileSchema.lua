@@ -1,0 +1,140 @@
+--!strict
+-- ProfileSchema.lua: the saved profile's shape, its defaults and the chain of migrations (docs/progression.md §5).
+-- Pure (no DataStore, no Players): ProfileService loads the raw table and passes it through Migrate().
+-- Rules:
+--   * every stored key is kept, unknown ones included (a newer version's fields survive an older server);
+--   * a migration step only ADDS fields with their defaults, it never removes or lowers anything;
+--   * corrupt values (NaN, strings, negatives) fall back to their default;
+--   * a profile written by a newer schema than this code understands loads read-only (never saved back).
+local RS = game:GetService("ReplicatedStorage")
+local Progression = require(RS:WaitForChild("Game"):WaitForChild("Progression"))
+local Config = require(RS:WaitForChild("Economy"):WaitForChild("EconomyConfig"))
+
+local ProfileSchema = {}
+
+ProfileSchema.VERSION = 2
+
+-- flat numbers (v1 career stats + v2 economy); all >= 0
+local STATS: { [string]: number } = {
+	-- v1
+	matches = 0, wins = 0, losses = 0, draws = 0,
+	goals = 0, assists = 0, saves = 0, epicSaves = 0, shots = 0, clears = 0, demos = 0, aerials = 0,
+	points = 0, xp = 0, bestKmh = 0, streak = 0, bestStreak = 0, pinches = 0, bestPinchKmh = 0,
+	-- v2
+	credits = 0, creditsEarned = 0, rewardedLevel = 1, minigames = 0, minigameWins = 0,
+}
+ProfileSchema.STATS = STATS
+
+-- counters of the current UTC day (Rewards.EnsureDay resets them)
+local ECON: { [string]: number } = { day = -1, earned = 0, localCredits = 0, localXp = 0, lastLocal = 0, firstWinDay = -1 }
+ProfileSchema.ECON = ECON
+
+local function goodNum(v: any): boolean
+	return type(v) == "number" and v == v and v >= 0 and v < 1e15
+end
+ProfileSchema.GoodNum = goodNum
+
+local function deepCopy(v: any, depth: number): any
+	if type(v) ~= "table" or depth > 24 then return v end
+	local out = {}
+	for k, x in v do
+		out[k] = deepCopy(x, depth + 1)
+	end
+	return out
+end
+ProfileSchema.DeepCopy = function(v: any): any return deepCopy(v, 0) end
+
+local function emptyChallenges(): any
+	return { daily = { period = -1, list = {} }, weekly = { period = -1, list = {} } }
+end
+
+function ProfileSchema.Defaults(): { [string]: any }
+	local d: { [string]: any } = {}
+	for k, v in STATS do d[k] = v end
+	d.schema = ProfileSchema.VERSION
+	d.econ = table.clone(ECON)
+	d.challenges = emptyChallenges()
+	return d
+end
+
+local function validChallengeSlot(s: any): boolean
+	if type(s) ~= "table" or type(s.period) ~= "number" or type(s.list) ~= "table" then return false end
+	for _, e in s.list do
+		if type(e) ~= "table" or type(e.id) ~= "string" or not goodNum(e.progress) or type(e.done) ~= "boolean" then return false end
+	end
+	return true
+end
+
+-- fill missing / repair corrupt values of every field this version knows (unknown keys are left alone)
+local function fill(d: { [string]: any })
+	for k, v in STATS do
+		if not goodNum(d[k]) then d[k] = v end
+	end
+	if d.rewardedLevel < 1 then d.rewardedLevel = 1 end
+	if type(d.econ) ~= "table" then d.econ = {} end
+	for k, v in ECON do
+		local x = d.econ[k]
+		if type(x) ~= "number" or x ~= x then d.econ[k] = v end
+	end
+	if type(d.challenges) ~= "table" then d.challenges = emptyChallenges() end
+	for _, kind in { "daily", "weekly" } do
+		if not validChallengeSlot(d.challenges[kind]) then d.challenges[kind] = { period = -1, list = {} } end
+	end
+	if d.settings ~= nil and type(d.settings) ~= "table" then d.settings = nil end
+end
+
+-- MIGRATIONS[v] turns a vN profile into v(N+1). info collects what happened (for logs / the client).
+local MIGRATIONS: { [number]: (any, any) -> () } = {}
+
+-- v1 -> v2: credits and challenges. Existing players get a one-time bonus for the levels they already reached
+-- (their level-up credits start counting from the current level).
+MIGRATIONS[1] = function(d: any, info: any)
+	local level = Progression.FromXp(if goodNum(d.xp) then d.xp else 0)
+	local bonus = math.min(Config.WELCOME_BONUS.max, Config.WELCOME_BONUS.perLevel * (level - 1))
+	d.credits = bonus
+	d.creditsEarned = bonus
+	d.rewardedLevel = level
+	d.welcomeBonus = bonus
+	d.econ = table.clone(ECON)
+	d.challenges = emptyChallenges()
+	info.welcomeBonus = bonus
+end
+
+ProfileSchema.MIGRATIONS = MIGRATIONS
+
+export type Info = { from: number, fresh: boolean, readOnly: boolean, welcomeBonus: number? }
+
+-- raw: whatever the DataStore returned (nil for a new player). Returns a fresh table (raw is never modified).
+function ProfileSchema.Migrate(raw: any): ({ [string]: any }, Info)
+	local info: Info = { from = 0, fresh = false, readOnly = false }
+	if type(raw) ~= "table" then
+		info.fresh = true
+		info.from = ProfileSchema.VERSION
+		return ProfileSchema.Defaults(), info
+	end
+	local d = deepCopy(raw, 0)
+	d._lock = nil -- session lock lives in the store record only
+	local v = tonumber(d.schema)
+	if v == nil or v ~= v or v < 1 then v = 1 end
+	v = math.floor(v :: number)
+	info.from = v
+	-- v1 stats first, so a migration reads clean numbers
+	for k in STATS do
+		if d[k] ~= nil and not goodNum(d[k]) then d[k] = nil end
+	end
+	if v > ProfileSchema.VERSION then
+		info.readOnly = true
+		fill(d)
+		return d, info
+	end
+	while v < ProfileSchema.VERSION do
+		local step = MIGRATIONS[v]
+		if step then step(d, info) end
+		v += 1
+	end
+	d.schema = ProfileSchema.VERSION
+	fill(d)
+	return d, info
+end
+
+return ProfileSchema
