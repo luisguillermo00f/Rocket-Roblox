@@ -22,6 +22,8 @@ local OSWALD_REG = Font.new("rbxasset://fonts/families/Oswald.json", Enum.FontWe
 
 local Progression = require(script.Parent.Progression)
 local InputGlyphs = require(script.Parent.InputGlyphs)
+local CosmeticApply = require(script.Parent.CosmeticApply)
+local CosmeticCatalog = require(script.Parent.Parent:WaitForChild("Economy"):WaitForChild("CosmeticCatalog"))
 
 local gui: ScreenGui? = nil
 local overlay: ScreenGui? = nil
@@ -251,7 +253,7 @@ local function buildCard(g: ScreenGui)
 	local c = button(g, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -56, 0, 74), Size = UDim2.fromOffset(560, 96), BackgroundTransparency = 1 })
 	local av = frame(c, { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), Size = UDim2.fromOffset(88, 88), BackgroundColor3 = INK, BackgroundTransparency = 0.25 })
 	local ac = Instance.new("UICorner"); ac.CornerRadius = UDim.new(0.5, 0); ac.Parent = av
-	local ring = Instance.new("UIStroke"); ring.Color = WHITE; ring.Transparency = 0.55; ring.Thickness = 1.5; ring.Parent = av
+	local ring = Instance.new("UIStroke"); ring.Color = WHITE; ring.Transparency = 0.55; ring.Thickness = 1.5; ring.Parent = av -- avatar frame cosmetic
 	local img = Instance.new("ImageLabel")
 	img.BackgroundTransparency = 1
 	img.Size = UDim2.fromScale(1, 1)
@@ -268,8 +270,10 @@ local function buildCard(g: ScreenGui)
 	-- Créditos: "1.250 ◆" left of the XP bar
 	local credits = text(c, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -424, 0, 52), Size = UDim2.fromOffset(140, 24), Text = "0", TextSize = 22, TextColor3 = WHITE, TextXAlignment = Enum.TextXAlignment.Right })
 	gem(c, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, -410, 0, 64) })
+	-- equipped title (cosmetic) above the name
+	local title = text(c, { AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -104, 0, 4), Size = UDim2.fromOffset(450, 22), Text = "", TextSize = 20, TextColor3 = GOLD, TextXAlignment = Enum.TextXAlignment.Right })
 	c.MouseButton1Click:Connect(function() MainMenu.OpenProfile() end)
-	card = { root = c, lvl = lvl, fill = fill, xpText = xpText, badgeScale = badgeScale, levelUp = levelUp, credits = credits }
+	card = { root = c, lvl = lvl, fill = fill, xpText = xpText, badgeScale = badgeScale, levelUp = levelUp, credits = credits, ring = ring, title = title, look = "" }
 end
 
 local function refreshCard(animate: boolean)
@@ -316,6 +320,16 @@ local function refreshCard(animate: boolean)
 		card.credits.Text = fmtInt(credits)
 	end
 	shownCredits = credits
+	-- cosmetics shown on the card: avatar frame + title
+	local eq = CosmeticCatalog.Resolve(profileData.equipped)
+	local look = eq.frame.id .. "|" .. eq.title.id
+	if card.look ~= look then
+		card.look = look
+		if card.stopFrame then card.stopFrame() end
+		card.stopFrame = CosmeticApply.Frame(card.ring, eq.frame.params)
+		card.title.Text = eq.title.params.text or ""
+		card.title.TextColor3 = eq.title.params.color or GOLD
+	end
 end
 
 -- data from the server profile (see ServerScriptService.ProfileService)
@@ -574,8 +588,9 @@ function MainMenu.Show(defaults: { [string]: any }, hitboxes: { string }, onPlay
 	refreshCard(false)
 
 	local ITEMS = {
-		{ id = "play", label = "JUGAR" }, { id = "garage", label = "GARAJE" }, { id = "challenges", label = "DESAFÍOS" },
-		{ id = "training", label = "ENTRENAMIENTO" }, { id = "ranked", label = "RANKED" }, { id = "settings", label = "AJUSTES" },
+		{ id = "play", label = "JUGAR" }, { id = "garage", label = "GARAJE" }, { id = "shop", label = "TIENDA" },
+		{ id = "challenges", label = "DESAFÍOS" }, { id = "training", label = "ENTRENAMIENTO" }, { id = "ranked", label = "RANKED" },
+		{ id = "settings", label = "AJUSTES" },
 	}
 	local ROW = 80
 	local LEFT = 56
@@ -1585,19 +1600,6 @@ function MainMenu.Show(defaults: { [string]: any }, hitboxes: { string }, onPlay
 				{ text = function() return "CONTRA BOTS  ·  SIN CONEXIÓN" end, act = function() cfg.mode = "1v1"; cfg.bot = false; cfg.ranked = false; go() end },
 				stepper("BOTS", function() return diffLabel(cfg.difficulty) end, cycleDiff),
 			}, "Partido de 5 minutos en línea; los bots completan los equipos"
-		elseif id == "garage" then
-			local defs = {}
-			for _, sk in SKINS do
-				table.insert(defs, {
-					text = function() return (if cfg.skin == sk.id then "●  " else "○  ") .. sk.label end,
-					act = function()
-						cfg.skin = sk.id
-						if onPreview then onPreview(cfg) end
-					end,
-					desc = sk.sub,
-				})
-			end
-			return defs, "Cambia tu carro. La física es la misma."
 		elseif id == "training" then
 			return {
 				{ text = function() return "LIBRE" end, act = function() cfg.mode = "training"; cfg.bot = false; go() end },
@@ -1683,6 +1685,24 @@ function MainMenu.Show(defaults: { [string]: any }, hitboxes: { string }, onPlay
 		if ITEMS[i].id == "challenges" then
 			sel = i
 			require(script.Parent.ChallengesScreen).Open(MainMenu.UI)
+			return
+		end
+		if ITEMS[i].id == "garage" then
+			sel = i
+			-- the menu car wears whatever the garage is showing (saved loadout or a try-on)
+			require(script.Parent.GarageScreen).Open(MainMenu.UI, {
+				preview = function(loadout)
+					cfg.loadout = loadout
+					local body = CosmeticCatalog.Get(loadout.body)
+					cfg.skin = if body then body.params.template else cfg.skin
+					if onPreview then onPreview(cfg) end
+				end,
+			})
+			return
+		end
+		if ITEMS[i].id == "shop" then
+			sel = i
+			require(script.Parent.ShopScreen).Open(MainMenu.UI, MainMenu.ShopCtx())
 			return
 		end
 		sel = i
@@ -1949,6 +1969,11 @@ end
 
 function MainMenu.ModalOpen(): boolean
 	return overlay ~= nil
+end
+
+-- what the shop screens need from the menu (confirmation modal); lootboxes add their tab in phase 3
+function MainMenu.ShopCtx(): any
+	return { modal = MainMenu.Modal, closeModal = MainMenu.CloseModal, modalOpen = MainMenu.ModalOpen, tabs = {} }
 end
 
 return MainMenu
